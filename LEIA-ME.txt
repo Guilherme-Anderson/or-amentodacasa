@@ -1,0 +1,18 @@
+CORREÇÃO DE TELA — VERSÃO 2.4.2
+
+O navegador estava exibindo o código JavaScript como texto porque o arquivo index.html foi substituído ou recebeu o conteúdo do app.js.
+
+COMO CORRIGIR
+1. Pare o Live Server.
+2. Na pasta do projeto, substitua apenas:
+   - index.html
+   - app.js
+   - styles.css
+3. NÃO substitua o config.js.
+4. Inicie o Live Server novamente.
+5. Abra: http://127.0.0.1:5500/?v=2.4.2
+6. Se necessário, pressione Ctrl+F5.
+
+VERIFICAÇÃO
+- index.html deve começar com: <!doctype html>
+- app.js deve começar com: (() => {
