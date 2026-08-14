@@ -1,9 +1,11 @@
 (() => {
   "use strict";
 
-  const APP_VERSION = "2.4.2";
+  const APP_VERSION = "2.5.2";
   const OFFLINE_QUEUE_KEY = "gastos-da-casa-offline-v2";
   const THEME_STORAGE_KEY = "gastos-da-casa-theme";
+  const LAST_FORMA_KEY = "gastos-da-casa-last-forma";
+  const LAST_ORCAMENTO_KEY = "gastos-da-casa-last-orcamento";
   const ALLOWED_PAYMENT_METHODS = new Set(["PIX", "BYBIT", "NUBANK", "ALELO"]);
   const ALLOWED_BUDGET_CATEGORIES = new Set([
     "Dizimo",
@@ -50,10 +52,18 @@
     yearFilter: document.querySelector("#year-filter"),
     historyCount: document.querySelector("#history-count"),
     historyTotal: document.querySelector("#history-total"),
+    categorySummary: document.querySelector("#category-summary"),
     signedUser: document.querySelector("#signed-user"),
     toast: document.querySelector("#toast"),
     themeToggles: [...document.querySelectorAll("[data-theme-toggle]")],
-    themeColor: document.querySelector('meta[name="theme-color"]')
+    themeColor: document.querySelector('meta[name="theme-color"]'),
+    gastoSuggestions: document.querySelector("#gasto-suggestions"),
+    editBanner: document.querySelector("#edit-banner"),
+    cancelEditButton: document.querySelector("#cancel-edit-button"),
+    confirmOverlay: document.querySelector("#confirm-overlay"),
+    confirmMessage: document.querySelector("#confirm-message"),
+    confirmCancelButton: document.querySelector("#confirm-cancel-button"),
+    confirmOkButton: document.querySelector("#confirm-ok-button")
   };
 
   let supabaseClient = null;
@@ -64,6 +74,8 @@
   let historyNeedsRefresh = true;
   let allExpenses = [];
   let membersById = new Map();
+  let editingExpenseId = null;
+  let filtersDefaulted = false;
 
   const moneyFormatter = new Intl.NumberFormat("pt-BR", {
     style: "currency",
@@ -384,6 +396,19 @@
       ...years.map((year) => `<option value="${year}">${year}</option>`)
     ].join("");
 
+    if (!filtersDefaulted) {
+      filtersDefaulted = true;
+      const now = new Date();
+      const currentMonth = String(now.getMonth() + 1);
+      const currentYear = String(now.getFullYear());
+
+      if (years.some((year) => String(year) === currentYear)) {
+        elements.monthFilter.value = currentMonth;
+        elements.yearFilter.value = currentYear;
+        return;
+      }
+    }
+
     if (years.some((year) => String(year) === selectedYear)) {
       elements.yearFilter.value = selectedYear;
     }
@@ -438,20 +463,66 @@
 
         return `
           <article class="expense-item">
-            <div class="expense-title-group">
-              <h3>${escapeHtml(item.gasto)}</h3>
-              <span class="expense-person">${escapeHtml(getMemberLabel(item.user_id))}</span>
+            <div class="expense-main">
+              <div class="expense-title-group">
+                <h3>${escapeHtml(item.gasto)}</h3>
+                <span class="expense-person">${escapeHtml(getMemberLabel(item.user_id))}</span>
+              </div>
+              <p class="expense-meta">${escapeHtml(item.forma)}${installments} · ${escapeHtml(item.orcamento || "Sem categoria")} · ${escapeHtml(formattedDate)}</p>
+              ${note}
             </div>
-            <span class="expense-value">${moneyFormatter.format(Number(item.valor))}</span>
-            <p class="expense-meta">${escapeHtml(item.forma)}${installments} · ${escapeHtml(item.orcamento || "Sem categoria")} · ${escapeHtml(formattedDate)}</p>
-            ${note}
+            <div class="expense-side">
+              <span class="expense-value">${moneyFormatter.format(Number(item.valor))}</span>
+              <div class="expense-actions">
+                <button type="button" class="expense-action-button" data-action="edit" data-id="${escapeHtml(item.id)}">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
+                  <span>Editar</span>
+                </button>
+                <button type="button" class="expense-action-button danger" data-action="delete" data-id="${escapeHtml(item.id)}">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path></svg>
+                  <span>Excluir</span>
+                </button>
+              </div>
+            </div>
           </article>`;
       })
       .join("");
   }
 
+  function renderCategorySummary(items) {
+    if (!items.length) {
+      elements.categorySummary.classList.add("hidden");
+      elements.categorySummary.innerHTML = "";
+      return;
+    }
+
+    const totalsByCategory = new Map();
+    for (const item of items) {
+      const category = item.orcamento || "Sem categoria";
+      totalsByCategory.set(category, (totalsByCategory.get(category) || 0) + Number(item.valor || 0));
+    }
+
+    const rows = [...totalsByCategory.entries()].sort((a, b) => b[1] - a[1]);
+    const maxValue = Math.max(...rows.map(([, value]) => value));
+
+    elements.categorySummary.classList.remove("hidden");
+    elements.categorySummary.innerHTML = rows
+      .map(([category, value]) => {
+        const percent = maxValue > 0 ? Math.round((value / maxValue) * 100) : 0;
+        return `
+          <div class="category-summary-row">
+            <span class="bar" style="width:${percent}%"></span>
+            <span>${escapeHtml(category)}</span>
+            <strong>${moneyFormatter.format(value)}</strong>
+          </div>`;
+      })
+      .join("");
+  }
+
   function applyHistoryFilters() {
-    renderRecent(getFilteredExpenses());
+    const filtered = getFilteredExpenses();
+    renderRecent(filtered);
+    renderCategorySummary(filtered);
   }
 
   async function fetchAllExpenses() {
@@ -508,6 +579,65 @@
     } finally {
       elements.refreshButton.disabled = false;
       elements.recentList.removeAttribute("aria-busy");
+    }
+  }
+
+  function getLastForma() {
+    try {
+      const value = localStorage.getItem(LAST_FORMA_KEY);
+      return ALLOWED_PAYMENT_METHODS.has(value) ? value : "PIX";
+    } catch {
+      return "PIX";
+    }
+  }
+
+  function getLastOrcamento() {
+    try {
+      const value = localStorage.getItem(LAST_ORCAMENTO_KEY);
+      return ALLOWED_BUDGET_CATEGORIES.has(value) ? value : "";
+    } catch {
+      return "";
+    }
+  }
+
+  function rememberLastChoice(forma, orcamento) {
+    try {
+      localStorage.setItem(LAST_FORMA_KEY, forma);
+      localStorage.setItem(LAST_ORCAMENTO_KEY, orcamento);
+    } catch {
+      // A lembrança da última escolha é apenas uma conveniência.
+    }
+  }
+
+  async function loadGastoSuggestions() {
+    if (!supabaseClient || !currentSession) return;
+
+    try {
+      const { data, error } = await supabaseClient
+        .from("gastos")
+        .select("gasto")
+        .order("ocorrido_em", { ascending: false })
+        .limit(300);
+
+      if (error) throw error;
+
+      const frequency = new Map();
+      for (const item of data || []) {
+        const name = String(item.gasto || "").trim();
+        if (!name) continue;
+        frequency.set(name, (frequency.get(name) || 0) + 1);
+      }
+
+      const names = [...frequency.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([name]) => name)
+        .slice(0, 30);
+
+      elements.gastoSuggestions.innerHTML = names
+        .map((name) => `<option value="${escapeHtml(name)}"></option>`)
+        .join("");
+    } catch (error) {
+      console.warn("Não foi possível carregar sugestões de gasto:", error);
     }
   }
 
@@ -579,12 +709,113 @@
   function resetExpenseForm() {
     elements.expenseForm.reset();
     elements.agora.checked = true;
-    elements.forma.value = "PIX";
+    elements.forma.value = getLastForma();
     elements.parcelas.value = "1";
-    elements.orcamento.value = "";
+    elements.orcamento.value = getLastOrcamento();
     toggleInstallmentsField();
     toggleDateField();
     elements.gasto.focus();
+  }
+
+  function exitEditMode() {
+    editingExpenseId = null;
+    elements.editBanner.classList.add("hidden");
+    elements.saveButton.textContent = "Salvar gasto";
+  }
+
+  function enterEditMode(item) {
+    editingExpenseId = item.id;
+
+    elements.gasto.value = item.gasto || "";
+    elements.valor.value = Number(item.valor || 0).toLocaleString("pt-BR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+    elements.forma.value = ALLOWED_PAYMENT_METHODS.has(item.forma) ? item.forma : "PIX";
+    toggleInstallmentsField();
+    if (elements.forma.value === "NUBANK") {
+      elements.parcelas.value = String(Math.min(12, Math.max(1, Number(item.parcelas || 1))));
+    }
+    elements.orcamento.value = ALLOWED_BUDGET_CATEGORIES.has(item.orcamento) ? item.orcamento : "";
+    elements.observacao.value = item.observacao || "";
+
+    const occurredAt = new Date(item.ocorrido_em);
+    elements.agora.checked = false;
+    elements.dateInput.value = Number.isNaN(occurredAt.getTime())
+      ? toLocalDateTimeValue()
+      : toLocalDateTimeValue(occurredAt);
+    toggleDateField();
+
+    elements.editBanner.classList.remove("hidden");
+    elements.saveButton.textContent = "Atualizar gasto";
+    setMessage(elements.expenseMessage);
+
+    showAppScreen("entry");
+    window.setTimeout(() => elements.gasto.focus({ preventScroll: true }), 0);
+  }
+
+  function askConfirmation(message) {
+    return new Promise((resolve) => {
+      elements.confirmMessage.textContent = message;
+      elements.confirmOverlay.classList.remove("hidden");
+
+      const finish = (result) => {
+        elements.confirmOverlay.classList.add("hidden");
+        elements.confirmCancelButton.removeEventListener("click", onCancel);
+        elements.confirmOkButton.removeEventListener("click", onConfirm);
+        resolve(result);
+      };
+      const onCancel = () => finish(false);
+      const onConfirm = () => finish(true);
+
+      elements.confirmCancelButton.addEventListener("click", onCancel);
+      elements.confirmOkButton.addEventListener("click", onConfirm);
+    });
+  }
+
+  async function deleteExpense(item) {
+    if (!navigator.onLine) {
+      showToast("Sem internet: não é possível excluir agora.");
+      return;
+    }
+
+    const label = `${item.gasto} (${moneyFormatter.format(Number(item.valor || 0))})`;
+    const confirmed = await askConfirmation(
+      `Excluir o lançamento "${label}"? Essa ação não pode ser desfeita.`
+    );
+    if (!confirmed) return;
+
+    try {
+      const { error } = await supabaseClient.from("gastos").delete().eq("id", item.id);
+      if (error) throw error;
+
+      allExpenses = allExpenses.filter((expense) => expense.id !== item.id);
+      populateHistoryFilters();
+      applyHistoryFilters();
+
+      if (editingExpenseId === item.id) {
+        exitEditMode();
+      }
+
+      showToast("Gasto excluído.");
+    } catch (error) {
+      console.error("Erro ao excluir gasto:", error);
+      showToast(`Não foi possível excluir: ${error?.message || "erro desconhecido"}`);
+    }
+  }
+
+  function handleHistoryListClick(event) {
+    const button = event.target.closest("[data-action]");
+    if (!button) return;
+
+    const item = allExpenses.find((expense) => String(expense.id) === button.dataset.id);
+    if (!item) return;
+
+    if (button.dataset.action === "edit") {
+      enterEditMode(item);
+    } else if (button.dataset.action === "delete") {
+      void deleteExpense(item);
+    }
   }
 
   async function applySession(session) {
@@ -601,6 +832,11 @@
       allExpenses = [];
       membersById = new Map();
       updateHistorySummary([]);
+      elements.categorySummary.classList.add("hidden");
+      elements.categorySummary.innerHTML = "";
+      elements.gastoSuggestions.innerHTML = "";
+      exitEditMode();
+      filtersDefaulted = false;
       historyNeedsRefresh = true;
       showAppScreen("entry");
       return;
@@ -615,6 +851,7 @@
     await flushOfflineQueue();
     if (renderToken !== authRenderToken) return;
     historyNeedsRefresh = true;
+    void loadGastoSuggestions();
   }
 
   async function handleLogin(event) {
@@ -716,16 +953,58 @@
       }
     }
 
-    const payload = {
+    const basePayload = {
       gasto,
       valor,
       forma,
       parcelas,
       orcamento,
       ocorrido_em: occurredAt.toISOString(),
-      observacao: observacao || null,
-      client_id: randomUuid()
+      observacao: observacao || null
     };
+
+    if (editingExpenseId) {
+      if (!navigator.onLine) {
+        setMessage(
+          elements.expenseMessage,
+          "Sem internet: não é possível atualizar agora. Tente novamente quando a conexão voltar.",
+          "error"
+        );
+        return;
+      }
+
+      const editingId = editingExpenseId;
+      setLoading(elements.saveButton, true, "Atualizando...", "Atualizar gasto");
+
+      try {
+        const { error } = await supabaseClient.from("gastos").update(basePayload).eq("id", editingId);
+        if (error) throw error;
+
+        allExpenses = allExpenses.map((expense) =>
+          expense.id === editingId ? { ...expense, ...basePayload } : expense
+        );
+        rememberLastChoice(forma, orcamento);
+        populateHistoryFilters();
+        applyHistoryFilters();
+
+        exitEditMode();
+        resetExpenseForm();
+        showToast("Gasto atualizado!");
+        showAppScreen("history");
+      } catch (error) {
+        console.error("Erro ao atualizar gasto:", error);
+        setMessage(
+          elements.expenseMessage,
+          `Não foi possível atualizar. ${error?.message || "Erro desconhecido."}`,
+          "error"
+        );
+      } finally {
+        setLoading(elements.saveButton, false, "Atualizando...", "Atualizar gasto");
+      }
+      return;
+    }
+
+    const payload = { ...basePayload, client_id: randomUuid() };
 
     if (!navigator.onLine) {
       queueOfflineExpense(payload);
@@ -741,6 +1020,7 @@
       const { error } = await supabaseClient.from("gastos").insert(payload);
       if (error) throw error;
 
+      rememberLastChoice(forma, orcamento);
       resetExpenseForm();
       historyNeedsRefresh = true;
       setMessage(elements.expenseMessage, "Gasto salvo com sucesso.", "success");
@@ -814,6 +1094,11 @@
     elements.yearFilter.addEventListener("change", applyHistoryFilters);
     elements.openHistoryButton.addEventListener("click", () => showAppScreen("history"));
     elements.backEntryButton.addEventListener("click", () => showAppScreen("entry"));
+    elements.recentList.addEventListener("click", handleHistoryListClick);
+    elements.cancelEditButton.addEventListener("click", () => {
+      exitEditMode();
+      resetExpenseForm();
+    });
     elements.showPassword.addEventListener("change", () => {
       elements.password.type = elements.showPassword.checked ? "text" : "password";
     });

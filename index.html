@@ -7,6 +7,10 @@
   <meta name="description" content="Registro rápido dos gastos da casa." />
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="manifest" href="manifest.json" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Gastos da Casa" />
 
   <script>
     (() => {
@@ -19,7 +23,7 @@
     })();
   </script>
 
-  <link rel="stylesheet" href="styles.css?v=2.4.2" />
+  <link rel="stylesheet" href="styles.css?v=2.5.2" />
   <title>Gastos da Casa</title>
 </head>
 <body>
@@ -124,6 +128,11 @@
           </div>
         </header>
 
+        <div id="edit-banner" class="edit-banner hidden">
+          <span>Editando um lançamento existente</span>
+          <button id="cancel-edit-button" type="button" class="text-button">Cancelar edição</button>
+        </div>
+
         <form id="expense-form" class="card expense-form" novalidate>
           <div class="form-fields">
             <label class="field field-full">
@@ -135,8 +144,10 @@
                 maxlength="120"
                 required
                 autocomplete="off"
+                list="gasto-suggestions"
                 placeholder="Ex.: Mercado, gasolina, farmácia"
               />
+              <datalist id="gasto-suggestions"></datalist>
             </label>
 
             <label class="field">
@@ -270,44 +281,48 @@
         </header>
 
         <section class="history-filters card" aria-label="Filtros dos lançamentos">
-          <label class="filter-field person-filter">
-            <span>Pessoa</span>
-            <select id="person-filter">
-              <option value="">Todas as pessoas</option>
-            </select>
-          </label>
+          <div class="filters-row">
+            <label class="filter-field person-filter">
+              <span>Pessoa</span>
+              <select id="person-filter">
+                <option value="">Todas as pessoas</option>
+              </select>
+            </label>
 
-          <label class="filter-field">
-            <span>Mês</span>
-            <select id="month-filter">
-              <option value="">Todos os meses</option>
-              <option value="1">Janeiro</option>
-              <option value="2">Fevereiro</option>
-              <option value="3">Março</option>
-              <option value="4">Abril</option>
-              <option value="5">Maio</option>
-              <option value="6">Junho</option>
-              <option value="7">Julho</option>
-              <option value="8">Agosto</option>
-              <option value="9">Setembro</option>
-              <option value="10">Outubro</option>
-              <option value="11">Novembro</option>
-              <option value="12">Dezembro</option>
-            </select>
-          </label>
+            <label class="filter-field">
+              <span>Mês</span>
+              <select id="month-filter">
+                <option value="">Todos os meses</option>
+                <option value="1">Janeiro</option>
+                <option value="2">Fevereiro</option>
+                <option value="3">Março</option>
+                <option value="4">Abril</option>
+                <option value="5">Maio</option>
+                <option value="6">Junho</option>
+                <option value="7">Julho</option>
+                <option value="8">Agosto</option>
+                <option value="9">Setembro</option>
+                <option value="10">Outubro</option>
+                <option value="11">Novembro</option>
+                <option value="12">Dezembro</option>
+              </select>
+            </label>
 
-          <label class="filter-field">
-            <span>Ano</span>
-            <select id="year-filter">
-              <option value="">Todos os anos</option>
-            </select>
-          </label>
+            <label class="filter-field">
+              <span>Ano</span>
+              <select id="year-filter">
+                <option value="">Todos os anos</option>
+              </select>
+            </label>
+          </div>
 
           <div class="history-summary" aria-live="polite">
             <span id="history-count">0 lançamentos</span>
             <strong id="history-total">R$ 0,00</strong>
           </div>
         </section>
+
+        <div id="category-summary" class="category-summary card hidden" aria-label="Total por categoria de orçamento"></div>
 
         <div class="history-content card">
           <div id="recent-list" class="recent-list">
@@ -320,8 +335,18 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
+  <div id="confirm-overlay" class="confirm-overlay hidden">
+    <div class="confirm-box card" role="alertdialog" aria-modal="true" aria-labelledby="confirm-message">
+      <p id="confirm-message"></p>
+      <div class="confirm-actions">
+        <button id="confirm-cancel-button" type="button" class="text-button">Cancelar</button>
+        <button id="confirm-ok-button" type="button" class="primary-button danger-button">Excluir</button>
+      </div>
+    </div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="config.js?v=2.4.2"></script>
-  <script src="app.js?v=2.4.2"></script>
+  <script src="config.js?v=2.5.2"></script>
+  <script src="app.js?v=2.5.2"></script>
 </body>
 </html>
