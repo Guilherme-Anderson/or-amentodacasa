@@ -121,8 +121,9 @@ button { cursor: pointer; }
   border-radius: 17px;
   background: var(--primary);
   color: #fff;
+  font-size: .92rem;
   font-weight: 800;
-  letter-spacing: -0.06em;
+  letter-spacing: -0.04em;
 }
 
 h1, h2, p { margin-top: 0; }

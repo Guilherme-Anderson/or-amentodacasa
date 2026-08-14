@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const APP_VERSION = "2.6.1";
+  const APP_VERSION = "2.6.2";
   const OFFLINE_QUEUE_KEY = "gastos-da-casa-offline-v2";
   const THEME_STORAGE_KEY = "gastos-da-casa-theme";
   const LAST_FORMA_KEY = "gastos-da-casa-last-forma";
