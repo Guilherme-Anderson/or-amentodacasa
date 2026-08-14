@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const APP_VERSION = "2.5.2";
+  const APP_VERSION = "2.6.1";
   const OFFLINE_QUEUE_KEY = "gastos-da-casa-offline-v2";
   const THEME_STORAGE_KEY = "gastos-da-casa-theme";
   const LAST_FORMA_KEY = "gastos-da-casa-last-forma";
@@ -16,12 +16,38 @@
     "Conhecimento",
     "Liberdade Financeira"
   ]);
+  const CATEGORY_TARGETS = [
+    ["Dizimo", 10],
+    ["Custo Fixo", 40],
+    ["Conforto", 10],
+    ["Prazer", 5],
+    ["Metas", 10],
+    ["Conhecimento", 5],
+    ["Liberdade Financeira", 20]
+  ];
+  const CATEGORY_COLORS = {
+    Dizimo: "#f59e0b",
+    "Custo Fixo": "#3b82f6",
+    Conforto: "#10b981",
+    Prazer: "#ec4899",
+    Metas: "#8b5cf6",
+    Conhecimento: "#06b6d4",
+    "Liberdade Financeira": "#f97316"
+  };
+  const CATEGORY_SHORT_LABELS = {
+    "Liberdade Financeira": "Liberdade Fin."
+  };
+
+  function shortCategoryLabel(category) {
+    return CATEGORY_SHORT_LABELS[category] || category;
+  }
 
   const elements = {
     loginView: document.querySelector("#login-view"),
     appView: document.querySelector("#app-view"),
     entryScreen: document.querySelector("#entry-screen"),
     historyScreen: document.querySelector("#history-screen"),
+    dashboardScreen: document.querySelector("#dashboard-screen"),
     loginForm: document.querySelector("#login-form"),
     expenseForm: document.querySelector("#expense-form"),
     loginMessage: document.querySelector("#login-message"),
@@ -31,7 +57,9 @@
     saveButton: document.querySelector("#save-button"),
     logoutButtons: [...document.querySelectorAll(".logout-button")],
     openHistoryButton: document.querySelector("#open-history-button"),
+    openDashboardButton: document.querySelector("#open-dashboard-button"),
     backEntryButton: document.querySelector("#back-entry-button"),
+    backDashboardButton: document.querySelector("#back-dashboard-button"),
     refreshButton: document.querySelector("#refresh-button"),
     showPassword: document.querySelector("#show-password"),
     email: document.querySelector("#email"),
@@ -63,7 +91,15 @@
     confirmOverlay: document.querySelector("#confirm-overlay"),
     confirmMessage: document.querySelector("#confirm-message"),
     confirmCancelButton: document.querySelector("#confirm-cancel-button"),
-    confirmOkButton: document.querySelector("#confirm-ok-button")
+    confirmOkButton: document.querySelector("#confirm-ok-button"),
+    dashboardPeriod: document.querySelector("#dashboard-period"),
+    dashboardTotal: document.querySelector("#dashboard-total"),
+    dashboardCount: document.querySelector("#dashboard-count"),
+    dashboardDonut: document.querySelector("#dashboard-donut"),
+    dashboardLegend: document.querySelector("#dashboard-legend"),
+    dashboardGoals: document.querySelector("#dashboard-goals"),
+    dashboardMonthFilter: document.querySelector("#dashboard-month-filter"),
+    dashboardYearFilter: document.querySelector("#dashboard-year-filter")
   };
 
   let supabaseClient = null;
@@ -76,6 +112,7 @@
   let membersById = new Map();
   let editingExpenseId = null;
   let filtersDefaulted = false;
+  let dashboardFiltersDefaulted = false;
 
   const moneyFormatter = new Intl.NumberFormat("pt-BR", {
     style: "currency",
@@ -309,15 +346,18 @@
   }
 
   function showAppScreen(screenName) {
-    const showHistory = screenName === "history";
-    activeScreen = showHistory ? "history" : "entry";
+    const target = screenName === "history" || screenName === "dashboard" ? screenName : "entry";
+    activeScreen = target;
 
-    elements.entryScreen.classList.toggle("hidden", showHistory);
-    elements.historyScreen.classList.toggle("hidden", !showHistory);
+    elements.entryScreen.classList.toggle("hidden", target !== "entry");
+    elements.historyScreen.classList.toggle("hidden", target !== "history");
+    elements.dashboardScreen.classList.toggle("hidden", target !== "dashboard");
 
-    if (showHistory) {
+    if (target === "history" || target === "dashboard") {
       if (historyNeedsRefresh) {
         void loadRecent();
+      } else if (target === "dashboard") {
+        renderDashboard();
       }
       window.scrollTo({ top: 0, behavior: "auto" });
       return;
@@ -525,6 +565,115 @@
     renderCategorySummary(filtered);
   }
 
+  const monthLabelFormatter = new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric" });
+
+  function populateDashboardFilters() {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const selectedYear = elements.dashboardYearFilter.value;
+
+    const years = [...new Set(
+      allExpenses
+        .map((item) => new Date(item.ocorrido_em))
+        .filter((date) => !Number.isNaN(date.getTime()))
+        .map((date) => date.getFullYear())
+    )];
+    if (!years.includes(currentYear)) years.push(currentYear);
+    years.sort((a, b) => b - a);
+
+    elements.dashboardYearFilter.innerHTML = years
+      .map((year) => `<option value="${year}">${year}</option>`)
+      .join("");
+
+    if (!dashboardFiltersDefaulted) {
+      dashboardFiltersDefaulted = true;
+      elements.dashboardMonthFilter.value = String(now.getMonth() + 1);
+      elements.dashboardYearFilter.value = String(currentYear);
+      return;
+    }
+
+    elements.dashboardYearFilter.value = years.some((year) => String(year) === selectedYear)
+      ? selectedYear
+      : String(currentYear);
+  }
+
+  function renderDashboard() {
+    const now = new Date();
+    const month = Number(elements.dashboardMonthFilter.value || now.getMonth() + 1);
+    const year = Number(elements.dashboardYearFilter.value || now.getFullYear());
+
+    const items = allExpenses.filter((item) => {
+      const date = new Date(item.ocorrido_em);
+      if (Number.isNaN(date.getTime())) return false;
+      return date.getMonth() + 1 === month && date.getFullYear() === year;
+    });
+
+    const total = items.reduce((sum, item) => sum + Number(item.valor || 0), 0);
+
+    const totalsByCategory = new Map();
+    for (const item of items) {
+      const category = item.orcamento || "Sem categoria";
+      totalsByCategory.set(category, (totalsByCategory.get(category) || 0) + Number(item.valor || 0));
+    }
+
+    const periodLabel = monthLabelFormatter.format(new Date(year, month - 1, 1));
+    elements.dashboardPeriod.textContent = periodLabel.charAt(0).toUpperCase() + periodLabel.slice(1);
+    elements.dashboardTotal.textContent = moneyFormatter.format(total);
+    elements.dashboardCount.textContent = String(items.length);
+
+    let cursor = 0;
+    const gradientStops = [];
+    const legendRows = [];
+    const goalRows = [];
+
+    for (const [category, targetPercent] of CATEGORY_TARGETS) {
+      const value = totalsByCategory.get(category) || 0;
+      const realPercent = total > 0 ? (value / total) * 100 : 0;
+      const color = CATEGORY_COLORS[category] || "var(--muted)";
+
+      if (value > 0) {
+        const start = cursor;
+        const end = cursor + realPercent;
+        gradientStops.push(`${color} ${start}% ${end}%`);
+        cursor = end;
+      }
+
+      legendRows.push(`
+        <li class="dashboard-legend-row">
+          <span class="dashboard-dot" style="background:${color}"></span>
+          <span class="dashboard-legend-name">${escapeHtml(shortCategoryLabel(category))}</span>
+          <span class="dashboard-legend-value">${moneyFormatter.format(value)}</span>
+        </li>`);
+
+      const diff = realPercent - targetPercent;
+      const isOver = diff > 0.5;
+      const diffLabel = `${isOver ? "+" : ""}${diff.toFixed(1).replace(".", ",")} p.p.`;
+      const fillWidth = Math.min(100, realPercent);
+
+      goalRows.push(`
+        <div class="goal-row">
+          <div class="goal-row-head">
+            <span>${escapeHtml(category)}</span>
+            <span class="goal-badge ${isOver ? "over" : "under"}">${diffLabel}</span>
+          </div>
+          <div class="goal-track">
+            <span class="goal-fill ${isOver ? "over" : ""}" style="width:${fillWidth}%"></span>
+            <span class="goal-marker" style="left:${Math.min(100, targetPercent)}%"></span>
+          </div>
+          <div class="goal-row-value">
+            <span>Meta ${targetPercent}%</span>
+            <span>Real ${realPercent.toFixed(1).replace(".", ",")}% · ${moneyFormatter.format(value)}</span>
+          </div>
+        </div>`);
+    }
+
+    elements.dashboardDonut.style.background = total > 0
+      ? `conic-gradient(${gradientStops.join(", ")})`
+      : "var(--surface-soft)";
+    elements.dashboardLegend.innerHTML = legendRows.join("");
+    elements.dashboardGoals.innerHTML = goalRows.join("");
+  }
+
   async function fetchAllExpenses() {
     const pageSize = 1000;
     const items = [];
@@ -570,6 +719,8 @@
       allExpenses = expenses;
       populateHistoryFilters();
       applyHistoryFilters();
+      populateDashboardFilters();
+      renderDashboard();
       historyNeedsRefresh = false;
     } catch (error) {
       elements.recentList.innerHTML = `<p class="empty-state">Não foi possível carregar: ${escapeHtml(
@@ -792,6 +943,8 @@
       allExpenses = allExpenses.filter((expense) => expense.id !== item.id);
       populateHistoryFilters();
       applyHistoryFilters();
+      populateDashboardFilters();
+      renderDashboard();
 
       if (editingExpenseId === item.id) {
         exitEditMode();
@@ -837,7 +990,9 @@
       elements.gastoSuggestions.innerHTML = "";
       exitEditMode();
       filtersDefaulted = false;
+      dashboardFiltersDefaulted = false;
       historyNeedsRefresh = true;
+      renderDashboard();
       showAppScreen("entry");
       return;
     }
@@ -986,6 +1141,8 @@
         rememberLastChoice(forma, orcamento);
         populateHistoryFilters();
         applyHistoryFilters();
+        populateDashboardFilters();
+        renderDashboard();
 
         exitEditMode();
         resetExpenseForm();
@@ -1093,7 +1250,11 @@
     elements.monthFilter.addEventListener("change", applyHistoryFilters);
     elements.yearFilter.addEventListener("change", applyHistoryFilters);
     elements.openHistoryButton.addEventListener("click", () => showAppScreen("history"));
+    elements.openDashboardButton.addEventListener("click", () => showAppScreen("dashboard"));
+    elements.dashboardMonthFilter.addEventListener("change", renderDashboard);
+    elements.dashboardYearFilter.addEventListener("change", renderDashboard);
     elements.backEntryButton.addEventListener("click", () => showAppScreen("entry"));
+    elements.backDashboardButton.addEventListener("click", () => showAppScreen("entry"));
     elements.recentList.addEventListener("click", handleHistoryListClick);
     elements.cancelEditButton.addEventListener("click", () => {
       exitEditMode();
