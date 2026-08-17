@@ -887,12 +887,25 @@ html[data-theme="dark"] .theme-icon-sun { display: block; }
   display: flex;
   align-items: center;
   justify-content: space-between;
+  width: 100%;
   gap: 10px;
   padding: 8px 11px;
+  border: 1px solid transparent;
   border-radius: 10px;
   background: var(--surface-soft);
+  color: inherit;
+  font: inherit;
   font-size: .82rem;
+  text-align: left;
   overflow: hidden;
+  transition: border-color .15s ease;
+}
+
+.category-summary-row:hover { border-color: var(--primary); }
+
+.category-summary-row.active {
+  border-color: var(--primary);
+  background: var(--primary-soft);
 }
 
 .category-summary-row .bar {
@@ -900,6 +913,11 @@ html[data-theme="dark"] .theme-icon-sun { display: block; }
   inset: 0;
   z-index: 0;
   background: var(--primary-soft);
+}
+
+.category-summary-row.active .bar {
+  background: var(--primary);
+  opacity: .28;
 }
 
 .category-summary-row span:not(.bar),

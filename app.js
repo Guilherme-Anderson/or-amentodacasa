@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const APP_VERSION = "2.7.0";
+  const APP_VERSION = "2.7.1";
   const OFFLINE_QUEUE_KEY = "gastos-da-casa-offline-v2";
   const THEME_STORAGE_KEY = "gastos-da-casa-theme";
   const LAST_FORMA_KEY = "gastos-da-casa-last-forma";
@@ -122,6 +122,7 @@
   let filtersDefaulted = false;
   let dashboardFiltersDefaulted = false;
   let monthlyIncome = 0;
+  let selectedCategoryFilter = "";
 
   const moneyFormatter = new Intl.NumberFormat("pt-BR", {
     style: "currency",
@@ -464,13 +465,18 @@
     }
   }
 
-  function getFilteredExpenses() {
+  function getFilteredExpenses({ ignoreCategory = false } = {}) {
     const selectedPerson = elements.personFilter.value;
     const selectedMonth = Number(elements.monthFilter.value || 0);
     const selectedYear = Number(elements.yearFilter.value || 0);
 
     return allExpenses.filter((item) => {
       if (selectedPerson && item.user_id !== selectedPerson) return false;
+
+      if (!ignoreCategory && selectedCategoryFilter) {
+        const category = item.orcamento || "Sem categoria";
+        if (category !== selectedCategoryFilter) return false;
+      }
 
       const date = new Date(item.ocorrido_em);
       if (Number.isNaN(date.getTime())) return !selectedMonth && !selectedYear;
@@ -559,20 +565,29 @@
     elements.categorySummary.innerHTML = rows
       .map(([category, value]) => {
         const percent = maxValue > 0 ? Math.round((value / maxValue) * 100) : 0;
+        const isActive = category === selectedCategoryFilter;
         return `
-          <div class="category-summary-row">
+          <button type="button" class="category-summary-row${isActive ? " active" : ""}" data-category="${escapeHtml(category)}">
             <span class="bar" style="width:${percent}%"></span>
             <span>${escapeHtml(category)}</span>
             <strong>${moneyFormatter.format(value)}</strong>
-          </div>`;
+          </button>`;
       })
       .join("");
   }
 
   function applyHistoryFilters() {
-    const filtered = getFilteredExpenses();
-    renderRecent(filtered);
-    renderCategorySummary(filtered);
+    renderRecent(getFilteredExpenses());
+    renderCategorySummary(getFilteredExpenses({ ignoreCategory: true }));
+  }
+
+  function handleCategorySummaryClick(event) {
+    const button = event.target.closest("[data-category]");
+    if (!button) return;
+
+    const category = button.dataset.category;
+    selectedCategoryFilter = selectedCategoryFilter === category ? "" : category;
+    applyHistoryFilters();
   }
 
   const monthLabelFormatter = new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric" });
@@ -1074,6 +1089,7 @@
       exitEditMode();
       filtersDefaulted = false;
       dashboardFiltersDefaulted = false;
+      selectedCategoryFilter = "";
       monthlyIncome = 0;
       elements.dashboardIncomeValue.textContent = moneyFormatter.format(0);
       showIncomeEdit(false);
@@ -1347,6 +1363,7 @@
     elements.backEntryButton.addEventListener("click", () => showAppScreen("entry"));
     elements.backDashboardButton.addEventListener("click", () => showAppScreen("entry"));
     elements.recentList.addEventListener("click", handleHistoryListClick);
+    elements.categorySummary.addEventListener("click", handleCategorySummaryClick);
     elements.cancelEditButton.addEventListener("click", () => {
       exitEditMode();
       resetExpenseForm();
