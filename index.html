@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#f4f7fb" />
   <meta name="description" content="Registro rápido dos gastos da casa." />
-  <link rel="icon" href="icons/icon-192.png?v=2.6.2" />
-  <link rel="apple-touch-icon" href="icons/icon-192.png?v=2.6.2" />
+  <link rel="icon" href="icons/icon-192.png?v=2.7.0" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png?v=2.7.0" />
   <link rel="manifest" href="manifest.json" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -23,7 +23,7 @@
     })();
   </script>
 
-  <link rel="stylesheet" href="styles.css?v=2.6.2" />
+  <link rel="stylesheet" href="styles.css?v=2.7.0" />
   <title>Gastos da Casa</title>
 </head>
 <body>
@@ -403,14 +403,42 @@
             </label>
           </div>
 
+          <div class="dashboard-income-card">
+            <div id="dashboard-income-display" class="dashboard-income-row">
+              <div>
+                <span>Renda mensal</span>
+                <strong id="dashboard-income-value">R$ 0,00</strong>
+              </div>
+              <button id="edit-income-button" type="button" class="text-button">Editar</button>
+            </div>
+
+            <div id="dashboard-income-edit" class="dashboard-income-edit hidden">
+              <label class="field field-full">
+                <span>Renda mensal</span>
+                <div class="money-input">
+                  <span aria-hidden="true">R$</span>
+                  <input id="dashboard-income-input" type="text" inputmode="decimal" placeholder="0,00" />
+                </div>
+              </label>
+              <div class="dashboard-income-edit-actions">
+                <button id="cancel-income-button" type="button" class="text-button">Cancelar</button>
+                <button id="save-income-button" type="button" class="primary-button">Salvar</button>
+              </div>
+            </div>
+          </div>
+
           <div class="dashboard-summary">
             <div class="dashboard-summary-item">
-              <span>Total no mês</span>
+              <span>Gasto no mês</span>
               <strong id="dashboard-total">R$ 0,00</strong>
             </div>
             <div class="dashboard-summary-item">
               <span>Lançamentos</span>
               <strong id="dashboard-count">0</strong>
+            </div>
+            <div class="dashboard-summary-item dashboard-summary-wide">
+              <span>Disponível pra gastar</span>
+              <strong id="dashboard-available">R$ 0,00</strong>
             </div>
           </div>
 
@@ -423,7 +451,7 @@
         </div>
 
         <div class="dashboard-content card">
-          <h2 class="dashboard-goals-title">Meta x Realizado</h2>
+          <h2 class="dashboard-goals-title">Quanto ainda posso gastar</h2>
           <div id="dashboard-goals" class="dashboard-goals"></div>
         </div>
       </section>
@@ -443,7 +471,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="config.js?v=2.6.2"></script>
-  <script src="app.js?v=2.6.2"></script>
+  <script src="config.js?v=2.7.0"></script>
+  <script src="app.js?v=2.7.0"></script>
 </body>
 </html>

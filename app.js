@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const APP_VERSION = "2.6.2";
+  const APP_VERSION = "2.7.0";
   const OFFLINE_QUEUE_KEY = "gastos-da-casa-offline-v2";
   const THEME_STORAGE_KEY = "gastos-da-casa-theme";
   const LAST_FORMA_KEY = "gastos-da-casa-last-forma";
@@ -99,7 +99,15 @@
     dashboardLegend: document.querySelector("#dashboard-legend"),
     dashboardGoals: document.querySelector("#dashboard-goals"),
     dashboardMonthFilter: document.querySelector("#dashboard-month-filter"),
-    dashboardYearFilter: document.querySelector("#dashboard-year-filter")
+    dashboardYearFilter: document.querySelector("#dashboard-year-filter"),
+    dashboardAvailable: document.querySelector("#dashboard-available"),
+    dashboardIncomeDisplay: document.querySelector("#dashboard-income-display"),
+    dashboardIncomeValue: document.querySelector("#dashboard-income-value"),
+    dashboardIncomeEdit: document.querySelector("#dashboard-income-edit"),
+    dashboardIncomeInput: document.querySelector("#dashboard-income-input"),
+    editIncomeButton: document.querySelector("#edit-income-button"),
+    cancelIncomeButton: document.querySelector("#cancel-income-button"),
+    saveIncomeButton: document.querySelector("#save-income-button")
   };
 
   let supabaseClient = null;
@@ -113,6 +121,7 @@
   let editingExpenseId = null;
   let filtersDefaulted = false;
   let dashboardFiltersDefaulted = false;
+  let monthlyIncome = 0;
 
   const moneyFormatter = new Intl.NumberFormat("pt-BR", {
     style: "currency",
@@ -303,10 +312,11 @@
     return Number.isFinite(number) ? Math.round(number * 100) / 100 : Number.NaN;
   }
 
-  function formatMoneyInput() {
-    const value = parseMoney(elements.valor.value);
+  function formatMoneyInput(event) {
+    const input = event?.target || elements.valor;
+    const value = parseMoney(input.value);
     if (Number.isFinite(value)) {
-      elements.valor.value = value.toLocaleString("pt-BR", {
+      input.value = value.toLocaleString("pt-BR", {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2
       });
@@ -621,6 +631,10 @@
     elements.dashboardTotal.textContent = moneyFormatter.format(total);
     elements.dashboardCount.textContent = String(items.length);
 
+    const available = monthlyIncome - total;
+    elements.dashboardAvailable.textContent = moneyFormatter.format(available);
+    elements.dashboardAvailable.classList.toggle("negative", available < 0);
+
     let cursor = 0;
     const gradientStops = [];
     const legendRows = [];
@@ -645,24 +659,27 @@
           <span class="dashboard-legend-value">${moneyFormatter.format(value)}</span>
         </li>`);
 
-      const diff = realPercent - targetPercent;
-      const isOver = diff > 0.5;
-      const diffLabel = `${isOver ? "+" : ""}${diff.toFixed(1).replace(".", ",")} p.p.`;
-      const fillWidth = Math.min(100, realPercent);
+      const ceiling = monthlyIncome * (targetPercent / 100);
+      const remaining = ceiling - value;
+      const isOver = remaining < -0.005;
+      const percentUsed = ceiling > 0 ? (value / ceiling) * 100 : (value > 0 ? 100 : 0);
+      const fillWidth = Math.min(100, percentUsed);
+      const badgeLabel = isOver
+        ? `Estourou ${moneyFormatter.format(Math.abs(remaining))}`
+        : `Sobra ${moneyFormatter.format(remaining)}`;
 
       goalRows.push(`
         <div class="goal-row">
           <div class="goal-row-head">
             <span>${escapeHtml(category)}</span>
-            <span class="goal-badge ${isOver ? "over" : "under"}">${diffLabel}</span>
+            <span class="goal-badge ${isOver ? "over" : "under"}">${badgeLabel}</span>
           </div>
           <div class="goal-track">
             <span class="goal-fill ${isOver ? "over" : ""}" style="width:${fillWidth}%"></span>
-            <span class="goal-marker" style="left:${Math.min(100, targetPercent)}%"></span>
           </div>
           <div class="goal-row-value">
-            <span>Meta ${targetPercent}%</span>
-            <span>Real ${realPercent.toFixed(1).replace(".", ",")}% · ${moneyFormatter.format(value)}</span>
+            <span>Limite ${moneyFormatter.format(ceiling)}</span>
+            <span>Gasto ${moneyFormatter.format(value)}</span>
           </div>
         </div>`);
     }
@@ -671,7 +688,9 @@
       ? `conic-gradient(${gradientStops.join(", ")})`
       : "var(--surface-soft)";
     elements.dashboardLegend.innerHTML = legendRows.join("");
-    elements.dashboardGoals.innerHTML = goalRows.join("");
+    elements.dashboardGoals.innerHTML = monthlyIncome > 0
+      ? goalRows.join("")
+      : '<p class="empty-state">Defina sua renda mensal acima para ver quanto ainda pode gastar em cada categoria.</p>';
   }
 
   async function fetchAllExpenses() {
@@ -789,6 +808,70 @@
         .join("");
     } catch (error) {
       console.warn("Não foi possível carregar sugestões de gasto:", error);
+    }
+  }
+
+  function showIncomeEdit(show) {
+    elements.dashboardIncomeDisplay.classList.toggle("hidden", show);
+    elements.dashboardIncomeEdit.classList.toggle("hidden", !show);
+
+    if (show) {
+      elements.dashboardIncomeInput.value = monthlyIncome > 0
+        ? monthlyIncome.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        : "";
+      window.setTimeout(() => elements.dashboardIncomeInput.focus(), 0);
+    }
+  }
+
+  async function loadMonthlyIncome() {
+    if (!supabaseClient || !currentSession) return;
+
+    try {
+      const { data, error } = await supabaseClient
+        .from("configuracoes_orcamento")
+        .select("renda_mensal")
+        .eq("id", true)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      monthlyIncome = Number(data?.renda_mensal || 0);
+    } catch (error) {
+      console.warn("Não foi possível carregar a renda mensal:", error);
+    } finally {
+      elements.dashboardIncomeValue.textContent = moneyFormatter.format(monthlyIncome);
+      renderDashboard();
+    }
+  }
+
+  async function saveMonthlyIncome() {
+    const value = parseMoney(elements.dashboardIncomeInput.value);
+
+    if (!Number.isFinite(value) || value < 0) {
+      showToast("Informe um valor de renda válido.");
+      return;
+    }
+
+    setLoading(elements.saveIncomeButton, true, "Salvando...", "Salvar");
+
+    try {
+      const { error } = await supabaseClient
+        .from("configuracoes_orcamento")
+        .update({ renda_mensal: value, atualizado_em: new Date().toISOString() })
+        .eq("id", true);
+
+      if (error) throw error;
+
+      monthlyIncome = value;
+      elements.dashboardIncomeValue.textContent = moneyFormatter.format(monthlyIncome);
+      showIncomeEdit(false);
+      renderDashboard();
+      showToast("Renda mensal atualizada.");
+    } catch (error) {
+      console.error("Erro ao salvar a renda mensal:", error);
+      showToast(`Não foi possível salvar: ${error?.message || "erro desconhecido"}`);
+    } finally {
+      setLoading(elements.saveIncomeButton, false, "Salvando...", "Salvar");
     }
   }
 
@@ -991,6 +1074,9 @@
       exitEditMode();
       filtersDefaulted = false;
       dashboardFiltersDefaulted = false;
+      monthlyIncome = 0;
+      elements.dashboardIncomeValue.textContent = moneyFormatter.format(0);
+      showIncomeEdit(false);
       historyNeedsRefresh = true;
       renderDashboard();
       showAppScreen("entry");
@@ -1007,6 +1093,7 @@
     if (renderToken !== authRenderToken) return;
     historyNeedsRefresh = true;
     void loadGastoSuggestions();
+    void loadMonthlyIncome();
   }
 
   async function handleLogin(event) {
@@ -1253,6 +1340,10 @@
     elements.openDashboardButton.addEventListener("click", () => showAppScreen("dashboard"));
     elements.dashboardMonthFilter.addEventListener("change", renderDashboard);
     elements.dashboardYearFilter.addEventListener("change", renderDashboard);
+    elements.editIncomeButton.addEventListener("click", () => showIncomeEdit(true));
+    elements.cancelIncomeButton.addEventListener("click", () => showIncomeEdit(false));
+    elements.saveIncomeButton.addEventListener("click", () => void saveMonthlyIncome());
+    elements.dashboardIncomeInput.addEventListener("blur", formatMoneyInput);
     elements.backEntryButton.addEventListener("click", () => showAppScreen("entry"));
     elements.backDashboardButton.addEventListener("click", () => showAppScreen("entry"));
     elements.recentList.addEventListener("click", handleHistoryListClick);
