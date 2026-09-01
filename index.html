@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#f4f7fb" />
   <meta name="description" content="Registro rápido dos gastos da casa." />
-  <link rel="icon" href="icons/icon-192.png?v=2.7.1" />
-  <link rel="apple-touch-icon" href="icons/icon-192.png?v=2.7.1" />
+  <link rel="icon" href="icons/icon-192.png?v=2.8.0" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png?v=2.8.0" />
   <link rel="manifest" href="manifest.json" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -23,7 +23,7 @@
     })();
   </script>
 
-  <link rel="stylesheet" href="styles.css?v=2.7.1" />
+  <link rel="stylesheet" href="styles.css?v=2.8.0" />
   <title>Gastos da Casa</title>
 </head>
 <body>
@@ -112,6 +112,13 @@
                   <path d="M3 3v5h5M12 7v5l3 2"></path>
                 </svg>
                 <span>Lançamentos</span>
+              </button>
+              <button id="open-report-button" class="history-button" type="button">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M8 6h13M8 12h13M8 18h13"></path>
+                  <path d="M3 6h.01M3 12h.01M3 18h.01"></path>
+                </svg>
+                <span>Relatório</span>
               </button>
             </div>
           </div>
@@ -455,6 +462,120 @@
           <div id="dashboard-goals" class="dashboard-goals"></div>
         </div>
       </section>
+
+      <section id="report-screen" class="app-screen history-screen hidden" aria-labelledby="report-title">
+        <header class="app-header history-header">
+          <div class="history-toolbar">
+            <button id="back-report-button" class="back-button" type="button" aria-label="Voltar para novo gasto">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m15 18-6-6 6-6"></path>
+              </svg>
+              <span>Novo gasto</span>
+            </button>
+
+            <div class="header-actions">
+              <button class="theme-toggle theme-toggle-compact" type="button" data-theme-toggle aria-label="Ativar modo escuro">
+                <svg class="theme-icon theme-icon-moon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M21 12.7A8.5 8.5 0 1 1 11.3 3a6.6 6.6 0 0 0 9.7 9.7Z"></path>
+                </svg>
+                <svg class="theme-icon theme-icon-sun" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="12" cy="12" r="4"></circle>
+                  <path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.41M17.66 6.34l1.41-1.41"></path>
+                </svg>
+                <span class="theme-toggle-label">Escuro</span>
+              </button>
+
+              <button class="logout-button text-button" type="button">Sair</button>
+            </div>
+          </div>
+
+          <div class="history-title-row">
+            <div>
+              <p class="eyebrow">CONFERÊNCIA MENSAL</p>
+              <h1 id="report-title">Relatório</h1>
+              <p class="history-subtitle">Vá filtrando por categoria, forma ou pessoa e confira se não falta nada.</p>
+            </div>
+          </div>
+        </header>
+
+        <section class="history-filters card" aria-label="Filtros do relatório">
+          <label class="filter-field report-search-field">
+            <span>Buscar</span>
+            <input id="report-search" type="text" placeholder="Nome do gasto ou observação" autocomplete="off" />
+          </label>
+
+          <div class="filters-row report-filters-row">
+            <label class="filter-field">
+              <span>Pessoa</span>
+              <select id="report-person-filter">
+                <option value="">Todas as pessoas</option>
+              </select>
+            </label>
+
+            <label class="filter-field">
+              <span>Categoria</span>
+              <select id="report-category-filter">
+                <option value="">Todas as categorias</option>
+                <option value="Dizimo">Dizimo</option>
+                <option value="Custo Fixo">Custo Fixo</option>
+                <option value="Conforto">Conforto</option>
+                <option value="Prazer">Prazer</option>
+                <option value="Metas">Metas</option>
+                <option value="Conhecimento">Conhecimento</option>
+                <option value="Liberdade Financeira">Liberdade Financeira</option>
+              </select>
+            </label>
+
+            <label class="filter-field">
+              <span>Forma</span>
+              <select id="report-forma-filter">
+                <option value="">Todas as formas</option>
+                <option value="PIX">PIX</option>
+                <option value="BYBIT">BYBIT</option>
+                <option value="NUBANK">NUBANK</option>
+                <option value="ALELO">ALELO</option>
+              </select>
+            </label>
+
+            <label class="filter-field">
+              <span>Mês</span>
+              <select id="report-month-filter">
+                <option value="">Todos os meses</option>
+                <option value="1">Janeiro</option>
+                <option value="2">Fevereiro</option>
+                <option value="3">Março</option>
+                <option value="4">Abril</option>
+                <option value="5">Maio</option>
+                <option value="6">Junho</option>
+                <option value="7">Julho</option>
+                <option value="8">Agosto</option>
+                <option value="9">Setembro</option>
+                <option value="10">Outubro</option>
+                <option value="11">Novembro</option>
+                <option value="12">Dezembro</option>
+              </select>
+            </label>
+
+            <label class="filter-field">
+              <span>Ano</span>
+              <select id="report-year-filter">
+                <option value="">Todos os anos</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="history-summary" aria-live="polite">
+            <span id="report-count">0 lançamentos</span>
+            <strong id="report-total">R$ 0,00</strong>
+          </div>
+        </section>
+
+        <div class="history-content card">
+          <div id="report-groups" class="report-groups">
+            <p class="empty-state">Nenhum lançamento carregado.</p>
+          </div>
+        </div>
+      </section>
     </section>
   </main>
 
@@ -471,7 +592,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="config.js?v=2.7.1"></script>
-  <script src="app.js?v=2.7.1"></script>
+  <script src="config.js?v=2.8.0"></script>
+  <script src="app.js?v=2.8.0"></script>
 </body>
 </html>

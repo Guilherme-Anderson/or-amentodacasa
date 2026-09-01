@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const APP_VERSION = "2.7.1";
+  const APP_VERSION = "2.8.0";
   const OFFLINE_QUEUE_KEY = "gastos-da-casa-offline-v2";
   const THEME_STORAGE_KEY = "gastos-da-casa-theme";
   const LAST_FORMA_KEY = "gastos-da-casa-last-forma";
@@ -48,6 +48,7 @@
     entryScreen: document.querySelector("#entry-screen"),
     historyScreen: document.querySelector("#history-screen"),
     dashboardScreen: document.querySelector("#dashboard-screen"),
+    reportScreen: document.querySelector("#report-screen"),
     loginForm: document.querySelector("#login-form"),
     expenseForm: document.querySelector("#expense-form"),
     loginMessage: document.querySelector("#login-message"),
@@ -58,8 +59,10 @@
     logoutButtons: [...document.querySelectorAll(".logout-button")],
     openHistoryButton: document.querySelector("#open-history-button"),
     openDashboardButton: document.querySelector("#open-dashboard-button"),
+    openReportButton: document.querySelector("#open-report-button"),
     backEntryButton: document.querySelector("#back-entry-button"),
     backDashboardButton: document.querySelector("#back-dashboard-button"),
+    backReportButton: document.querySelector("#back-report-button"),
     refreshButton: document.querySelector("#refresh-button"),
     showPassword: document.querySelector("#show-password"),
     email: document.querySelector("#email"),
@@ -107,7 +110,16 @@
     dashboardIncomeInput: document.querySelector("#dashboard-income-input"),
     editIncomeButton: document.querySelector("#edit-income-button"),
     cancelIncomeButton: document.querySelector("#cancel-income-button"),
-    saveIncomeButton: document.querySelector("#save-income-button")
+    saveIncomeButton: document.querySelector("#save-income-button"),
+    reportSearch: document.querySelector("#report-search"),
+    reportPersonFilter: document.querySelector("#report-person-filter"),
+    reportCategoryFilter: document.querySelector("#report-category-filter"),
+    reportFormaFilter: document.querySelector("#report-forma-filter"),
+    reportMonthFilter: document.querySelector("#report-month-filter"),
+    reportYearFilter: document.querySelector("#report-year-filter"),
+    reportCount: document.querySelector("#report-count"),
+    reportTotal: document.querySelector("#report-total"),
+    reportGroups: document.querySelector("#report-groups")
   };
 
   let supabaseClient = null;
@@ -123,6 +135,7 @@
   let dashboardFiltersDefaulted = false;
   let monthlyIncome = 0;
   let selectedCategoryFilter = "";
+  let reportFiltersDefaulted = false;
 
   const moneyFormatter = new Intl.NumberFormat("pt-BR", {
     style: "currency",
@@ -357,18 +370,21 @@
   }
 
   function showAppScreen(screenName) {
-    const target = screenName === "history" || screenName === "dashboard" ? screenName : "entry";
+    const target = ["history", "dashboard", "report"].includes(screenName) ? screenName : "entry";
     activeScreen = target;
 
     elements.entryScreen.classList.toggle("hidden", target !== "entry");
     elements.historyScreen.classList.toggle("hidden", target !== "history");
     elements.dashboardScreen.classList.toggle("hidden", target !== "dashboard");
+    elements.reportScreen.classList.toggle("hidden", target !== "report");
 
-    if (target === "history" || target === "dashboard") {
+    if (target === "history" || target === "dashboard" || target === "report") {
       if (historyNeedsRefresh) {
         void loadRecent();
       } else if (target === "dashboard") {
         renderDashboard();
+      } else if (target === "report") {
+        renderReport();
       }
       window.scrollTo({ top: 0, behavior: "auto" });
       return;
@@ -708,6 +724,167 @@
       : '<p class="empty-state">Defina sua renda mensal acima para ver quanto ainda pode gastar em cada categoria.</p>';
   }
 
+  function normalizeSearchText(value) {
+    return String(value || "")
+      .normalize("NFD")
+      .replace(/\p{Diacritic}/gu, "")
+      .toLowerCase();
+  }
+
+  function populateReportFilters() {
+    const selectedPerson = elements.reportPersonFilter.value;
+    const selectedYear = elements.reportYearFilter.value;
+
+    const personIds = new Set([
+      ...membersById.keys(),
+      ...allExpenses.map((item) => item.user_id).filter(Boolean)
+    ]);
+    const people = [...personIds]
+      .map((userId) => ({ userId, label: getMemberLabel(userId) }))
+      .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
+
+    elements.reportPersonFilter.innerHTML = [
+      '<option value="">Todas as pessoas</option>',
+      ...people.map(
+        (person) => `<option value="${escapeHtml(person.userId)}">${escapeHtml(person.label)}</option>`
+      )
+    ].join("");
+
+    if (people.some((person) => person.userId === selectedPerson)) {
+      elements.reportPersonFilter.value = selectedPerson;
+    }
+
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const years = [...new Set(
+      allExpenses
+        .map((item) => new Date(item.ocorrido_em))
+        .filter((date) => !Number.isNaN(date.getTime()))
+        .map((date) => date.getFullYear())
+    )];
+    if (!years.includes(currentYear)) years.push(currentYear);
+    years.sort((a, b) => b - a);
+
+    elements.reportYearFilter.innerHTML = [
+      '<option value="">Todos os anos</option>',
+      ...years.map((year) => `<option value="${year}">${year}</option>`)
+    ].join("");
+
+    if (!reportFiltersDefaulted) {
+      reportFiltersDefaulted = true;
+      elements.reportMonthFilter.value = String(now.getMonth() + 1);
+      elements.reportYearFilter.value = String(currentYear);
+      return;
+    }
+
+    elements.reportYearFilter.value = years.some((year) => String(year) === selectedYear)
+      ? selectedYear
+      : "";
+  }
+
+  function getReportFilteredExpenses() {
+    const selectedPerson = elements.reportPersonFilter.value;
+    const selectedCategory = elements.reportCategoryFilter.value;
+    const selectedForma = elements.reportFormaFilter.value;
+    const selectedMonth = Number(elements.reportMonthFilter.value || 0);
+    const selectedYear = Number(elements.reportYearFilter.value || 0);
+    const searchTerm = normalizeSearchText(elements.reportSearch.value.trim());
+
+    return allExpenses.filter((item) => {
+      if (selectedPerson && item.user_id !== selectedPerson) return false;
+      if (selectedForma && item.forma !== selectedForma) return false;
+
+      const category = item.orcamento || "Sem categoria";
+      if (selectedCategory && category !== selectedCategory) return false;
+
+      const date = new Date(item.ocorrido_em);
+      if (Number.isNaN(date.getTime())) {
+        if (selectedMonth || selectedYear) return false;
+      } else {
+        if (selectedMonth && date.getMonth() + 1 !== selectedMonth) return false;
+        if (selectedYear && date.getFullYear() !== selectedYear) return false;
+      }
+
+      if (searchTerm) {
+        const haystack = normalizeSearchText(`${item.gasto} ${item.observacao || ""}`);
+        if (!haystack.includes(searchTerm)) return false;
+      }
+
+      return true;
+    });
+  }
+
+  function renderReport() {
+    const items = getReportFilteredExpenses();
+    const total = items.reduce((sum, item) => sum + Number(item.valor || 0), 0);
+
+    elements.reportCount.textContent = `${items.length} ${items.length === 1 ? "lançamento" : "lançamentos"}`;
+    elements.reportTotal.textContent = moneyFormatter.format(total);
+
+    if (!items.length) {
+      elements.reportGroups.innerHTML =
+        '<p class="empty-state">Nenhum lançamento encontrado para os filtros selecionados.</p>';
+      return;
+    }
+
+    const groups = new Map();
+    for (const item of items) {
+      const category = item.orcamento || "Sem categoria";
+      if (!groups.has(category)) groups.set(category, []);
+      groups.get(category).push(item);
+    }
+
+    const knownOrder = CATEGORY_TARGETS.map(([name]) => name);
+    const orderedCategories = [
+      ...knownOrder.filter((name) => groups.has(name)),
+      ...[...groups.keys()].filter((name) => !knownOrder.includes(name))
+    ];
+
+    elements.reportGroups.innerHTML = orderedCategories
+      .map((category) => {
+        const groupItems = groups.get(category)
+          .slice()
+          .sort((a, b) => new Date(b.ocorrido_em) - new Date(a.ocorrido_em));
+        const subtotal = groupItems.reduce((sum, item) => sum + Number(item.valor || 0), 0);
+        const color = CATEGORY_COLORS[category] || "var(--muted)";
+
+        const rows = groupItems
+          .map((item) => {
+            const date = new Date(item.ocorrido_em);
+            const formattedDate = Number.isNaN(date.getTime())
+              ? "Data inválida"
+              : dateFormatter.format(date);
+            const installments = item.forma === "NUBANK" ? ` · ${Number(item.parcelas || 1)}x` : "";
+            const note = item.observacao
+              ? `<p class="report-row-note">${escapeHtml(item.observacao)}</p>`
+              : "";
+
+            return `
+              <div class="report-row">
+                <div class="report-row-main">
+                  <span class="report-row-name">${escapeHtml(item.gasto)}</span>
+                  <span class="report-row-meta">${escapeHtml(getMemberLabel(item.user_id))} · ${escapeHtml(item.forma)}${installments} · ${escapeHtml(formattedDate)}</span>
+                  ${note}
+                </div>
+                <span class="report-row-value">${moneyFormatter.format(Number(item.valor))}</span>
+              </div>`;
+          })
+          .join("");
+
+        return `
+          <section class="report-group">
+            <header class="report-group-header" style="--group-color:${color}">
+              <span class="report-group-dot"></span>
+              <h3>${escapeHtml(category)}</h3>
+              <span class="report-group-count">${groupItems.length} ${groupItems.length === 1 ? "item" : "itens"}</span>
+              <strong class="report-group-total">${moneyFormatter.format(subtotal)}</strong>
+            </header>
+            <div class="report-group-rows">${rows}</div>
+          </section>`;
+      })
+      .join("");
+  }
+
   async function fetchAllExpenses() {
     const pageSize = 1000;
     const items = [];
@@ -755,6 +932,8 @@
       applyHistoryFilters();
       populateDashboardFilters();
       renderDashboard();
+      populateReportFilters();
+      renderReport();
       historyNeedsRefresh = false;
     } catch (error) {
       elements.recentList.innerHTML = `<p class="empty-state">Não foi possível carregar: ${escapeHtml(
@@ -1043,6 +1222,8 @@
       applyHistoryFilters();
       populateDashboardFilters();
       renderDashboard();
+      populateReportFilters();
+      renderReport();
 
       if (editingExpenseId === item.id) {
         exitEditMode();
@@ -1089,12 +1270,14 @@
       exitEditMode();
       filtersDefaulted = false;
       dashboardFiltersDefaulted = false;
+      reportFiltersDefaulted = false;
       selectedCategoryFilter = "";
       monthlyIncome = 0;
       elements.dashboardIncomeValue.textContent = moneyFormatter.format(0);
       showIncomeEdit(false);
       historyNeedsRefresh = true;
       renderDashboard();
+      renderReport();
       showAppScreen("entry");
       return;
     }
@@ -1246,6 +1429,8 @@
         applyHistoryFilters();
         populateDashboardFilters();
         renderDashboard();
+        populateReportFilters();
+        renderReport();
 
         exitEditMode();
         resetExpenseForm();
@@ -1354,14 +1539,22 @@
     elements.yearFilter.addEventListener("change", applyHistoryFilters);
     elements.openHistoryButton.addEventListener("click", () => showAppScreen("history"));
     elements.openDashboardButton.addEventListener("click", () => showAppScreen("dashboard"));
+    elements.openReportButton.addEventListener("click", () => showAppScreen("report"));
     elements.dashboardMonthFilter.addEventListener("change", renderDashboard);
     elements.dashboardYearFilter.addEventListener("change", renderDashboard);
     elements.editIncomeButton.addEventListener("click", () => showIncomeEdit(true));
     elements.cancelIncomeButton.addEventListener("click", () => showIncomeEdit(false));
     elements.saveIncomeButton.addEventListener("click", () => void saveMonthlyIncome());
     elements.dashboardIncomeInput.addEventListener("blur", formatMoneyInput);
+    elements.reportSearch.addEventListener("input", renderReport);
+    elements.reportPersonFilter.addEventListener("change", renderReport);
+    elements.reportCategoryFilter.addEventListener("change", renderReport);
+    elements.reportFormaFilter.addEventListener("change", renderReport);
+    elements.reportMonthFilter.addEventListener("change", renderReport);
+    elements.reportYearFilter.addEventListener("change", renderReport);
     elements.backEntryButton.addEventListener("click", () => showAppScreen("entry"));
     elements.backDashboardButton.addEventListener("click", () => showAppScreen("entry"));
+    elements.backReportButton.addEventListener("click", () => showAppScreen("entry"));
     elements.recentList.addEventListener("click", handleHistoryListClick);
     elements.categorySummary.addEventListener("click", handleCategorySummaryClick);
     elements.cancelEditButton.addEventListener("click", () => {
