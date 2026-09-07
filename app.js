@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const APP_VERSION = "2.9.1";
+  const APP_VERSION = "2.10.0";
   const OFFLINE_QUEUE_KEY = "gastos-da-casa-offline-v2";
   const THEME_STORAGE_KEY = "gastos-da-casa-theme";
   const LAST_FORMA_KEY = "gastos-da-casa-last-forma";
@@ -12,6 +12,8 @@
     saldo_inicial: 0,
     saldo_inicial_competencia: null
   };
+  const NOTAS_BUCKET = "notas";
+  const SCAN_BUTTON_LABEL = "📷 Tirar foto da nota";
   const ALLOWED_PAYMENT_METHODS = new Set(["PIX", "BYBIT", "NUBANK", "ALELO"]);
   const ALLOWED_BUDGET_CATEGORIES = new Set([
     "Dizimo",
@@ -63,9 +65,11 @@
     loginButton: document.querySelector("#login-button"),
     saveButton: document.querySelector("#save-button"),
     logoutButtons: [...document.querySelectorAll(".logout-button")],
-    openHistoryButton: document.querySelector("#open-history-button"),
-    openDashboardButton: document.querySelector("#open-dashboard-button"),
-    openReportButton: document.querySelector("#open-report-button"),
+    menuButtons: [...document.querySelectorAll("[data-menu-toggle]")],
+    appMenu: document.querySelector("#app-menu"),
+    appMenuBackdrop: document.querySelector("#app-menu-backdrop"),
+    menuThemeItem: document.querySelector("#menu-theme-item"),
+    menuNotasCount: document.querySelector("#menu-notas-count"),
     backEntryButton: document.querySelector("#back-entry-button"),
     backDashboardButton: document.querySelector("#back-dashboard-button"),
     backReportButton: document.querySelector("#back-report-button"),
@@ -127,7 +131,6 @@
     reportTotal: document.querySelector("#report-total"),
     reportGroups: document.querySelector("#report-groups"),
     cardScreen: document.querySelector("#card-screen"),
-    openCardButton: document.querySelector("#open-card-button"),
     backCardButton: document.querySelector("#back-card-button"),
     faturaField: document.querySelector("#fatura-field"),
     faturaInput: document.querySelector("#fatura-competencia"),
@@ -161,7 +164,21 @@
     cardPaymentsList: document.querySelector("#card-payments-list"),
     cardPurchasesList: document.querySelector("#card-purchases-list"),
     cardFutureTotal: document.querySelector("#card-future-total"),
-    cardFutureDetail: document.querySelector("#card-future-detail")
+    cardFutureDetail: document.querySelector("#card-future-detail"),
+    scanNotaButton: document.querySelector("#scan-nota-button"),
+    notaFileInput: document.querySelector("#nota-file"),
+    openNotasButton: document.querySelector("#open-notas-button"),
+    notasPendingCount: document.querySelector("#notas-pending-count"),
+    captureRow: document.querySelector("#capture-row"),
+    notaBanner: document.querySelector("#nota-banner"),
+    notaBannerImg: document.querySelector("#nota-banner-img"),
+    notaBannerCancel: document.querySelector("#nota-banner-cancel"),
+    notasScreen: document.querySelector("#notas-screen"),
+    backNotasButton: document.querySelector("#back-notas-button"),
+    notasList: document.querySelector("#notas-list"),
+    photoOverlay: document.querySelector("#photo-overlay"),
+    photoOverlayImg: document.querySelector("#photo-overlay-img"),
+    photoOverlayClose: document.querySelector("#photo-overlay-close")
   };
 
   let supabaseClient = null;
@@ -183,6 +200,8 @@
   let cardCompetencia = "";
   let cardEmAberto = 0;
   let faturaManual = false;
+  let photoNotes = [];
+  let completingNota = null;
 
   const moneyFormatter = new Intl.NumberFormat("pt-BR", {
     style: "currency",
@@ -360,6 +379,10 @@
       if (label) label.textContent = isDark ? "Claro" : "Escuro";
     });
 
+    if (elements.menuThemeItem) {
+      elements.menuThemeItem.textContent = isDark ? "Mudar para modo claro" : "Mudar para modo escuro";
+    }
+
     if (persist) {
       try {
         localStorage.setItem(THEME_STORAGE_KEY, normalizedTheme);
@@ -483,7 +506,7 @@
   }
 
   function showAppScreen(screenName) {
-    const dataScreens = ["history", "dashboard", "report", "card"];
+    const dataScreens = ["history", "dashboard", "report", "card", "notas"];
     const target = dataScreens.includes(screenName) ? screenName : "entry";
     activeScreen = target;
 
@@ -492,6 +515,7 @@
     elements.dashboardScreen.classList.toggle("hidden", target !== "dashboard");
     elements.reportScreen.classList.toggle("hidden", target !== "report");
     elements.cardScreen.classList.toggle("hidden", target !== "card");
+    elements.notasScreen.classList.toggle("hidden", target !== "notas");
 
     if (dataScreens.includes(target)) {
       if (historyNeedsRefresh) {
@@ -502,6 +526,8 @@
         renderReport();
       } else if (target === "card") {
         renderCard();
+      } else if (target === "notas") {
+        void renderNotas();
       }
       window.scrollTo({ top: 0, behavior: "auto" });
       return;
@@ -509,6 +535,32 @@
 
     window.scrollTo({ top: 0, behavior: "auto" });
     window.setTimeout(() => elements.gasto.focus({ preventScroll: true }), 0);
+  }
+
+  function closeAppMenu() {
+    elements.appMenu.classList.add("hidden");
+    elements.appMenuBackdrop.classList.add("hidden");
+  }
+
+  function openAppMenu(anchorButton) {
+    const rect = anchorButton.getBoundingClientRect();
+    elements.appMenu.style.top = `${Math.round(rect.bottom + 8)}px`;
+    elements.appMenu.style.right = `${Math.round(Math.max(12, window.innerWidth - rect.right))}px`;
+
+    elements.appMenu.querySelectorAll("[data-nav]").forEach((item) => {
+      item.classList.toggle("is-active", item.dataset.nav === activeScreen);
+    });
+
+    elements.appMenu.classList.remove("hidden");
+    elements.appMenuBackdrop.classList.remove("hidden");
+  }
+
+  function toggleAppMenu(anchorButton) {
+    if (elements.appMenu.classList.contains("hidden")) {
+      openAppMenu(anchorButton);
+    } else {
+      closeAppMenu();
+    }
   }
 
   function formatAuthError(error) {
@@ -649,6 +701,13 @@
           ? ` · ${Number(item.parcela_num || 1)}/${Number(item.parcela_total)}`
           : "";
 
+        const fotoButton = item.foto_path
+          ? `<button type="button" class="expense-action-button" data-foto="${escapeHtml(item.foto_path)}">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                  <span>Nota</span>
+                </button>`
+          : "";
+
         return `
           <article class="expense-item">
             <div class="expense-main">
@@ -662,6 +721,7 @@
             <div class="expense-side">
               <span class="expense-value">${moneyFormatter.format(Number(item.valor))}</span>
               <div class="expense-actions">
+                ${fotoButton}
                 <button type="button" class="expense-action-button" data-action="edit" data-id="${escapeHtml(item.id)}">
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
                   <span>Editar</span>
@@ -1318,6 +1378,259 @@
     }
   }
 
+  // ---- Foto da nota (capturar agora, completar depois) -------------------
+  async function compressImage(file, maxDim = 1400, quality = 0.72) {
+    let bitmap;
+    try {
+      bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+    } catch {
+      bitmap = await createImageBitmap(file);
+    }
+
+    const largest = Math.max(bitmap.width, bitmap.height) || 1;
+    const scale = Math.min(1, maxDim / largest);
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    canvas.getContext("2d").drawImage(bitmap, 0, 0, width, height);
+    bitmap.close?.();
+
+    const blob = await new Promise((resolve) => {
+      canvas.toBlob((result) => resolve(result), "image/jpeg", quality);
+    });
+    if (!blob) throw new Error("Não foi possível processar a imagem.");
+    return blob;
+  }
+
+  function updateNotasBadge() {
+    const count = photoNotes.length;
+    if (elements.notasPendingCount) elements.notasPendingCount.textContent = String(count);
+
+    const label = elements.openNotasButton?.querySelector(".notas-btn-label");
+    if (label) {
+      label.textContent = count > 0
+        ? `${count} nota${count > 1 ? "s" : ""} pra completar`
+        : "Notas pra completar";
+    }
+
+    if (elements.menuNotasCount) {
+      elements.menuNotasCount.textContent = String(count);
+      elements.menuNotasCount.hidden = count === 0;
+    }
+    elements.menuButtons.forEach((button) => {
+      button.classList.toggle("has-pending", count > 0);
+    });
+  }
+
+  async function renderNotas() {
+    updateNotasBadge();
+
+    if (!photoNotes.length) {
+      elements.notasList.innerHTML =
+        '<p class="empty-state">Nenhuma nota pendente. Use “Tirar foto da nota” na tela de novo gasto.</p>';
+      return;
+    }
+
+    elements.notasList.setAttribute("aria-busy", "true");
+
+    let signed = [];
+    try {
+      const result = await supabaseClient.storage
+        .from(NOTAS_BUCKET)
+        .createSignedUrls(photoNotes.map((note) => note.foto_path), 3600);
+      signed = result.data || [];
+    } catch (error) {
+      console.warn("Não foi possível assinar as fotos das notas:", error);
+    }
+
+    elements.notasList.innerHTML = photoNotes
+      .map((note, index) => {
+        const when = new Date(note.capturado_em);
+        const whenLabel = Number.isNaN(when.getTime()) ? "—" : dateFormatter.format(when);
+        const url = signed[index] && signed[index].signedUrl;
+        const thumb = url
+          ? `<img src="${escapeHtml(url)}" alt="Foto da nota" loading="lazy">`
+          : "<span>sem prévia</span>";
+        return `
+          <article class="nota-card">
+            <button type="button" class="nota-thumb" data-nota-foto="${escapeHtml(note.foto_path)}">
+              ${thumb}
+            </button>
+            <div class="nota-body">
+              <span class="nota-when">Foto de ${escapeHtml(whenLabel)}</span>
+              <div class="nota-actions">
+                <button type="button" class="primary-button nota-complete" data-nota-id="${escapeHtml(note.id)}">Completar</button>
+                <button type="button" class="text-button nota-discard" data-nota-id="${escapeHtml(note.id)}">Descartar</button>
+              </div>
+            </div>
+          </article>`;
+      })
+      .join("");
+
+    elements.notasList.removeAttribute("aria-busy");
+  }
+
+  async function handleNotaCapture(event) {
+    const file = event.target.files && event.target.files[0];
+    event.target.value = "";
+    if (!file) return;
+
+    if (!supabaseClient || !currentSession?.user) {
+      showToast("Entre novamente para enviar a foto.");
+      return;
+    }
+    if (!navigator.onLine) {
+      showToast("Sem internet: tire a foto quando a conexão voltar.");
+      return;
+    }
+
+    setLoading(elements.scanNotaButton, true, "Enviando foto...", SCAN_BUTTON_LABEL);
+    try {
+      const blob = await compressImage(file);
+      const path = `${currentSession.user.id}/${Date.now()}-${randomUuid().slice(0, 8)}.jpg`;
+
+      const upload = await supabaseClient.storage
+        .from(NOTAS_BUCKET)
+        .upload(path, blob, { contentType: "image/jpeg", upsert: false });
+      if (upload.error) throw upload.error;
+
+      const inserted = await supabaseClient
+        .from("registros_foto")
+        .insert({ foto_path: path })
+        .select("id,user_id,foto_path,capturado_em,observacao")
+        .single();
+      if (inserted.error) throw inserted.error;
+
+      photoNotes = [inserted.data, ...photoNotes];
+      showToast("Nota guardada. Complete os dados quando puder.");
+      showAppScreen("notas");
+    } catch (error) {
+      console.error("Erro ao guardar a nota:", error);
+      showToast(`Não foi possível guardar a foto: ${error?.message || "erro desconhecido"}`);
+    } finally {
+      setLoading(elements.scanNotaButton, false, "Enviando foto...", SCAN_BUTTON_LABEL);
+    }
+  }
+
+  async function startCompletingNota(noteId) {
+    const note = photoNotes.find((item) => String(item.id) === String(noteId));
+    if (!note) return;
+
+    exitEditMode();
+    resetExpenseForm();
+    completingNota = note;
+
+    const when = new Date(note.capturado_em);
+    elements.agora.checked = false;
+    elements.dateInput.value = Number.isNaN(when.getTime())
+      ? toLocalDateTimeValue()
+      : toLocalDateTimeValue(when);
+    toggleDateField();
+    updateFaturaField();
+
+    elements.captureRow.classList.add("hidden");
+    elements.notaBanner.classList.remove("hidden");
+    elements.notaBannerImg.src = "";
+    try {
+      const { data, error } = await supabaseClient.storage
+        .from(NOTAS_BUCKET)
+        .createSignedUrl(note.foto_path, 3600);
+      if (!error) elements.notaBannerImg.src = data.signedUrl;
+    } catch (error) {
+      console.warn("Não foi possível carregar a prévia da nota:", error);
+    }
+
+    setMessage(elements.expenseMessage, "Confira a foto e preencha os dados do gasto.", "");
+    showAppScreen("entry");
+    window.setTimeout(() => elements.gasto.focus({ preventScroll: true }), 0);
+  }
+
+  function cancelCompletingNota() {
+    completingNota = null;
+    resetExpenseForm();
+    showAppScreen("notas");
+  }
+
+  async function consumePhotoNote(note) {
+    if (!note) return;
+    try {
+      await supabaseClient.from("registros_foto").delete().eq("id", note.id);
+    } catch (error) {
+      console.warn("Não foi possível remover o registro de foto:", error);
+    }
+    photoNotes = photoNotes.filter((item) => String(item.id) !== String(note.id));
+    completingNota = null;
+    updateNotasBadge();
+    void renderNotas();
+  }
+
+  async function discardNota(noteId) {
+    const note = photoNotes.find((item) => String(item.id) === String(noteId));
+    if (!note) return;
+
+    if (!navigator.onLine) {
+      showToast("Sem internet: descarte a nota quando a conexão voltar.");
+      return;
+    }
+
+    const confirmed = await askConfirmation("Descartar esta foto de nota? A imagem será apagada.");
+    if (!confirmed) return;
+
+    try {
+      const { error } = await supabaseClient.from("registros_foto").delete().eq("id", note.id);
+      if (error) throw error;
+      await supabaseClient.storage.from(NOTAS_BUCKET).remove([note.foto_path]).catch(() => {});
+
+      photoNotes = photoNotes.filter((item) => String(item.id) !== String(note.id));
+      if (completingNota && String(completingNota.id) === String(note.id)) {
+        completingNota = null;
+        resetExpenseForm();
+      }
+      updateNotasBadge();
+      renderNotas();
+      showToast("Nota descartada.");
+    } catch (error) {
+      console.error("Erro ao descartar a nota:", error);
+      showToast(`Não foi possível descartar: ${error?.message || "erro desconhecido"}`);
+    }
+  }
+
+  function handleNotasListClick(event) {
+    const button = event.target.closest("button");
+    if (!button) return;
+
+    if (button.classList.contains("nota-complete")) {
+      void startCompletingNota(button.dataset.notaId);
+    } else if (button.classList.contains("nota-discard")) {
+      void discardNota(button.dataset.notaId);
+    } else if (button.classList.contains("nota-thumb")) {
+      void openFotoOverlay(button.dataset.notaFoto);
+    }
+  }
+
+  async function openFotoOverlay(path) {
+    if (!path || !supabaseClient) return;
+    try {
+      const { data, error } = await supabaseClient.storage
+        .from(NOTAS_BUCKET)
+        .createSignedUrl(path, 3600);
+      if (error) throw error;
+      elements.photoOverlayImg.src = data.signedUrl;
+      elements.photoOverlay.classList.remove("hidden");
+    } catch (error) {
+      console.error("Erro ao abrir a foto:", error);
+      showToast(`Não foi possível abrir a foto: ${error?.message || "erro desconhecido"}`);
+    }
+  }
+
+  function closeFotoOverlay() {
+    elements.photoOverlay.classList.add("hidden");
+    elements.photoOverlayImg.src = "";
+  }
+
   async function fetchAllExpenses() {
     const pageSize = 1000;
     const items = [];
@@ -1326,7 +1639,7 @@
     while (true) {
       const { data, error } = await supabaseClient
         .from("gastos")
-        .select("id,user_id,gasto,valor,forma,parcelas,orcamento,ocorrido_em,observacao,data_compra,competencia,grupo_parcelamento,parcela_num,parcela_total")
+        .select("id,user_id,gasto,valor,forma,parcelas,orcamento,ocorrido_em,observacao,data_compra,competencia,grupo_parcelamento,parcela_num,parcela_total,foto_path")
         .order("ocorrido_em", { ascending: false })
         .range(start, start + pageSize - 1);
 
@@ -1347,7 +1660,7 @@
     elements.recentList.setAttribute("aria-busy", "true");
 
     try {
-      const [membersResult, expenses, cardConfigResult, cardPaymentsResult] = await Promise.all([
+      const [membersResult, expenses, cardConfigResult, cardPaymentsResult, notasResult] = await Promise.all([
         supabaseClient
           .from("membros_casal")
           .select("user_id,nome,email")
@@ -1361,12 +1674,17 @@
         supabaseClient
           .from("pagamentos_cartao")
           .select("id,user_id,competencia,valor,pago_em,observacao")
-          .order("pago_em", { ascending: false })
+          .order("pago_em", { ascending: false }),
+        supabaseClient
+          .from("registros_foto")
+          .select("id,user_id,foto_path,capturado_em,observacao")
+          .order("capturado_em", { ascending: false })
       ]);
 
       if (membersResult.error) throw membersResult.error;
       if (cardConfigResult.error) throw cardConfigResult.error;
       if (cardPaymentsResult.error) throw cardPaymentsResult.error;
+      if (notasResult.error) throw notasResult.error;
 
       membersById = new Map(
         (membersResult.data || []).map((member) => [member.user_id, member])
@@ -1379,6 +1697,7 @@
         ? { ...DEFAULT_CARD_CONFIG, ...cardConfigResult.data }
         : { ...DEFAULT_CARD_CONFIG };
       cardPayments = cardPaymentsResult.data || [];
+      photoNotes = notasResult.data || [];
 
       populateHistoryFilters();
       applyHistoryFilters();
@@ -1388,6 +1707,8 @@
       renderReport();
       renderCard();
       updateFaturaField();
+      updateNotasBadge();
+      void renderNotas();
       historyNeedsRefresh = false;
     } catch (error) {
       elements.recentList.innerHTML = `<p class="empty-state">Não foi possível carregar: ${escapeHtml(
@@ -1596,6 +1917,10 @@
     elements.orcamento.value = getLastOrcamento();
     faturaManual = false;
     elements.faturaInput.value = "";
+    completingNota = null;
+    elements.notaBanner.classList.add("hidden");
+    elements.notaBannerImg.src = "";
+    elements.captureRow.classList.remove("hidden");
     toggleInstallmentsField();
     toggleDateField();
     updateFaturaField();
@@ -1607,10 +1932,14 @@
     editingExpenseId = null;
     elements.editBanner.classList.add("hidden");
     elements.saveButton.textContent = "Salvar gasto";
+    elements.captureRow.classList.remove("hidden");
   }
 
   function enterEditMode(item) {
     editingExpenseId = item.id;
+    completingNota = null;
+    elements.notaBanner.classList.add("hidden");
+    elements.captureRow.classList.add("hidden");
 
     elements.gasto.value = item.gasto || "";
     elements.valor.value = Number(item.valor || 0).toLocaleString("pt-BR", {
@@ -1703,6 +2032,12 @@
   }
 
   function handleHistoryListClick(event) {
+    const fotoButton = event.target.closest("[data-foto]");
+    if (fotoButton) {
+      void openFotoOverlay(fotoButton.dataset.foto);
+      return;
+    }
+
     const button = event.target.closest("[data-action]");
     if (!button) return;
 
@@ -1748,6 +2083,12 @@
       faturaManual = false;
       showCardConfigEdit(false);
       showPaymentForm(false);
+      photoNotes = [];
+      completingNota = null;
+      elements.notaBanner.classList.add("hidden");
+      elements.captureRow.classList.remove("hidden");
+      updateNotasBadge();
+      void renderNotas();
       historyNeedsRefresh = true;
       renderDashboard();
       renderReport();
@@ -1868,6 +2209,16 @@
       }
     }
 
+    const notaToConsume = completingNota;
+    if (notaToConsume && !navigator.onLine) {
+      setMessage(
+        elements.expenseMessage,
+        "Sem internet: complete a nota quando a conexão voltar.",
+        "error"
+      );
+      return;
+    }
+
     const isNubank = forma === "NUBANK";
     const parcelaTotal = isNubank ? Math.min(12, Math.max(1, parcelas)) : 1;
 
@@ -1969,6 +2320,7 @@
           parcela_num: numero,
           parcela_total: parcelaTotal,
           observacao: observacao || null,
+          foto_path: notaToConsume ? notaToConsume.foto_path : null,
           client_id: randomUuid()
         });
       }
@@ -1982,12 +2334,14 @@
         rememberLastChoice(forma, orcamento);
         resetExpenseForm();
         historyNeedsRefresh = true;
+        await consumePhotoNote(notaToConsume);
         setMessage(
           elements.expenseMessage,
           `Compra em ${parcelaTotal}x registrada: ${moneyFormatter.format(baseParcela)} por mês na fatura.`,
           "success"
         );
         showToast(`Compra parcelada em ${parcelaTotal}x registrada!`);
+        if (notaToConsume) showAppScreen("notas");
       } catch (error) {
         console.error("Erro ao salvar compra parcelada:", error);
         setMessage(
@@ -2006,6 +2360,7 @@
       competencia: competencia1,
       parcela_num: 1,
       parcela_total: 1,
+      foto_path: notaToConsume ? notaToConsume.foto_path : null,
       client_id: randomUuid()
     };
 
@@ -2026,8 +2381,10 @@
       rememberLastChoice(forma, orcamento);
       resetExpenseForm();
       historyNeedsRefresh = true;
+      await consumePhotoNote(notaToConsume);
       setMessage(elements.expenseMessage, "Gasto salvo com sucesso.", "success");
       showToast("Gasto registrado!");
+      if (notaToConsume) showAppScreen("notas");
     } catch (error) {
       console.error("Erro ao salvar gasto:", error);
       setMessage(
@@ -2109,10 +2466,6 @@
     elements.personFilter.addEventListener("change", applyHistoryFilters);
     elements.monthFilter.addEventListener("change", applyHistoryFilters);
     elements.yearFilter.addEventListener("change", applyHistoryFilters);
-    elements.openHistoryButton.addEventListener("click", () => showAppScreen("history"));
-    elements.openDashboardButton.addEventListener("click", () => showAppScreen("dashboard"));
-    elements.openReportButton.addEventListener("click", () => showAppScreen("report"));
-    elements.openCardButton.addEventListener("click", () => showAppScreen("card"));
     elements.dashboardMonthFilter.addEventListener("change", renderDashboard);
     elements.dashboardYearFilter.addEventListener("change", renderDashboard);
     elements.editIncomeButton.addEventListener("click", () => showIncomeEdit(true));
@@ -2146,6 +2499,16 @@
     elements.cardPaymentSave.addEventListener("click", () => void savePayment());
     elements.cardPaymentValue.addEventListener("blur", formatMoneyInput);
     elements.cardPaymentsList.addEventListener("click", handleCardPaymentsClick);
+    elements.scanNotaButton.addEventListener("click", () => elements.notaFileInput.click());
+    elements.notaFileInput.addEventListener("change", handleNotaCapture);
+    elements.openNotasButton.addEventListener("click", () => showAppScreen("notas"));
+    elements.backNotasButton.addEventListener("click", () => showAppScreen("entry"));
+    elements.notasList.addEventListener("click", handleNotasListClick);
+    elements.notaBannerCancel.addEventListener("click", cancelCompletingNota);
+    elements.photoOverlayClose.addEventListener("click", closeFotoOverlay);
+    elements.photoOverlay.addEventListener("click", (event) => {
+      if (event.target === elements.photoOverlay) closeFotoOverlay();
+    });
     elements.recentList.addEventListener("click", handleHistoryListClick);
     elements.categorySummary.addEventListener("click", handleCategorySummaryClick);
     elements.cancelEditButton.addEventListener("click", () => {
@@ -2155,6 +2518,31 @@
     elements.showPassword.addEventListener("change", () => {
       elements.password.type = elements.showPassword.checked ? "text" : "password";
     });
+
+    elements.menuButtons.forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        toggleAppMenu(button);
+      });
+    });
+    elements.appMenuBackdrop.addEventListener("click", closeAppMenu);
+    elements.appMenu.querySelectorAll("[data-nav]").forEach((item) => {
+      item.addEventListener("click", () => {
+        const target = item.dataset.nav;
+        closeAppMenu();
+        showAppScreen(target);
+      });
+    });
+    elements.menuThemeItem.addEventListener("click", () => {
+      const nextTheme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+      applyTheme(nextTheme);
+      closeAppMenu();
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") closeAppMenu();
+    });
+    window.addEventListener("resize", closeAppMenu);
+
     window.addEventListener("online", () => {
       void flushOfflineQueue();
     });
@@ -2185,6 +2573,7 @@
 
     elements.logoutButtons.forEach((button) => {
       button.addEventListener("click", async () => {
+        closeAppMenu();
         elements.logoutButtons.forEach((item) => { item.disabled = true; });
         const { error } = await supabaseClient.auth.signOut({ scope: "local" });
         elements.logoutButtons.forEach((item) => { item.disabled = false; });
