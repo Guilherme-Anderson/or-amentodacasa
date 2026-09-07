@@ -1,11 +1,17 @@
 (() => {
   "use strict";
 
-  const APP_VERSION = "2.8.0";
+  const APP_VERSION = "2.9.0";
   const OFFLINE_QUEUE_KEY = "gastos-da-casa-offline-v2";
   const THEME_STORAGE_KEY = "gastos-da-casa-theme";
   const LAST_FORMA_KEY = "gastos-da-casa-last-forma";
   const LAST_ORCAMENTO_KEY = "gastos-da-casa-last-orcamento";
+  const DEFAULT_CARD_CONFIG = {
+    dia_fechamento: 3,
+    dia_vencimento: 10,
+    saldo_inicial: 0,
+    saldo_inicial_competencia: null
+  };
   const ALLOWED_PAYMENT_METHODS = new Set(["PIX", "BYBIT", "NUBANK", "ALELO"]);
   const ALLOWED_BUDGET_CATEGORIES = new Set([
     "Dizimo",
@@ -119,7 +125,43 @@
     reportYearFilter: document.querySelector("#report-year-filter"),
     reportCount: document.querySelector("#report-count"),
     reportTotal: document.querySelector("#report-total"),
-    reportGroups: document.querySelector("#report-groups")
+    reportGroups: document.querySelector("#report-groups"),
+    cardScreen: document.querySelector("#card-screen"),
+    openCardButton: document.querySelector("#open-card-button"),
+    backCardButton: document.querySelector("#back-card-button"),
+    faturaField: document.querySelector("#fatura-field"),
+    faturaInput: document.querySelector("#fatura-competencia"),
+    faturaReset: document.querySelector("#fatura-reset"),
+    faturaHint: document.querySelector("#fatura-hint"),
+    installmentHint: document.querySelector("#installment-hint"),
+    cardConfigDisplay: document.querySelector("#card-config-display"),
+    cardConfigSummary: document.querySelector("#card-config-summary"),
+    cardConfigEdit: document.querySelector("#card-config-edit"),
+    editCardConfigButton: document.querySelector("#edit-card-config-button"),
+    cancelCardConfigButton: document.querySelector("#cancel-card-config-button"),
+    saveCardConfigButton: document.querySelector("#save-card-config-button"),
+    cardClosingInput: document.querySelector("#card-closing-input"),
+    cardDueInput: document.querySelector("#card-due-input"),
+    cardInitialInput: document.querySelector("#card-initial-input"),
+    cardInitialMonthInput: document.querySelector("#card-initial-month-input"),
+    cardPrevButton: document.querySelector("#card-prev-button"),
+    cardNextButton: document.querySelector("#card-next-button"),
+    cardPeriod: document.querySelector("#card-period"),
+    cardCycleInfo: document.querySelector("#card-cycle-info"),
+    cardTotal: document.querySelector("#card-total"),
+    cardPaid: document.querySelector("#card-paid"),
+    cardOpen: document.querySelector("#card-open"),
+    cardPaymentToggle: document.querySelector("#card-payment-toggle"),
+    cardPaymentForm: document.querySelector("#card-payment-form"),
+    cardPaymentValue: document.querySelector("#card-payment-value"),
+    cardPaymentDate: document.querySelector("#card-payment-date"),
+    cardPaymentObs: document.querySelector("#card-payment-obs"),
+    cardPaymentCancel: document.querySelector("#card-payment-cancel"),
+    cardPaymentSave: document.querySelector("#card-payment-save"),
+    cardPaymentsList: document.querySelector("#card-payments-list"),
+    cardPurchasesList: document.querySelector("#card-purchases-list"),
+    cardFutureTotal: document.querySelector("#card-future-total"),
+    cardFutureDetail: document.querySelector("#card-future-detail")
   };
 
   let supabaseClient = null;
@@ -136,6 +178,11 @@
   let monthlyIncome = 0;
   let selectedCategoryFilter = "";
   let reportFiltersDefaulted = false;
+  let cardConfig = null;
+  let cardPayments = [];
+  let cardCompetencia = "";
+  let cardEmAberto = 0;
+  let faturaManual = false;
 
   const moneyFormatter = new Intl.NumberFormat("pt-BR", {
     style: "currency",
@@ -146,6 +193,72 @@
     dateStyle: "short",
     timeStyle: "short"
   });
+
+  const dateOnlyFormatter = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" });
+
+  // ---- Competência (mês da fatura) ----------------------------------------
+  // A competência é sempre representada como "AAAA-MM-01" para evitar as
+  // armadilhas de fuso ao converter datas puras com new Date().
+  function firstDayISO(year, monthIndex) {
+    const normalized = new Date(year, monthIndex, 1);
+    return `${normalized.getFullYear()}-${String(normalized.getMonth() + 1).padStart(2, "0")}-01`;
+  }
+
+  function competenciaParts(value) {
+    const [year, month] = String(value || "").split("-").map(Number);
+    return { year: year || 0, month: month || 0 };
+  }
+
+  function competenciaMonthISO(dateValue) {
+    const date = dateValue instanceof Date ? dateValue : new Date(dateValue);
+    if (Number.isNaN(date.getTime())) {
+      const now = new Date();
+      return firstDayISO(now.getFullYear(), now.getMonth());
+    }
+    return firstDayISO(date.getFullYear(), date.getMonth());
+  }
+
+  // Regra do cartão: uma compra até o dia do fechamento entra na fatura que
+  // fecha naquele mês; depois disso, entra na próxima. A competência é o mês
+  // do vencimento dessa fatura.
+  function competenciaFromPurchase(dateValue, closingDay, dueDay) {
+    const date = dateValue instanceof Date ? dateValue : new Date(dateValue);
+    if (Number.isNaN(date.getTime())) return competenciaMonthISO(new Date());
+
+    const closing = Number(closingDay) || DEFAULT_CARD_CONFIG.dia_fechamento;
+    const due = Number(dueDay) || DEFAULT_CARD_CONFIG.dia_vencimento;
+
+    let monthIndex = date.getMonth();
+    if (date.getDate() > closing) monthIndex += 1;
+    if (due <= closing) monthIndex += 1;
+    return firstDayISO(date.getFullYear(), monthIndex);
+  }
+
+  function addMonthsISO(value, months) {
+    const { year, month } = competenciaParts(value);
+    if (!year || !month) return competenciaMonthISO(new Date());
+    return firstDayISO(year, month - 1 + months);
+  }
+
+  function sameCompetencia(a, b) {
+    const pa = competenciaParts(a);
+    const pb = competenciaParts(b);
+    return pa.year > 0 && pa.year === pb.year && pa.month === pb.month;
+  }
+
+  function competenciaIsAfter(value, reference) {
+    const pv = competenciaParts(value);
+    const pr = competenciaParts(reference);
+    if (!pv.year) return false;
+    return pv.year > pr.year || (pv.year === pr.year && pv.month > pr.month);
+  }
+
+  function competenciaLabel(value) {
+    const { year, month } = competenciaParts(value);
+    if (!year || !month) return "—";
+    const label = monthLabelFormatter.format(new Date(year, month - 1, 1));
+    return label.charAt(0).toUpperCase() + label.slice(1);
+  }
 
   function normalizeEnvValue(rawValue, acceptedNames = []) {
     let value = String(rawValue ?? "").trim();
@@ -370,21 +483,25 @@
   }
 
   function showAppScreen(screenName) {
-    const target = ["history", "dashboard", "report"].includes(screenName) ? screenName : "entry";
+    const dataScreens = ["history", "dashboard", "report", "card"];
+    const target = dataScreens.includes(screenName) ? screenName : "entry";
     activeScreen = target;
 
     elements.entryScreen.classList.toggle("hidden", target !== "entry");
     elements.historyScreen.classList.toggle("hidden", target !== "history");
     elements.dashboardScreen.classList.toggle("hidden", target !== "dashboard");
     elements.reportScreen.classList.toggle("hidden", target !== "report");
+    elements.cardScreen.classList.toggle("hidden", target !== "card");
 
-    if (target === "history" || target === "dashboard" || target === "report") {
+    if (dataScreens.includes(target)) {
       if (historyNeedsRefresh) {
         void loadRecent();
       } else if (target === "dashboard") {
         renderDashboard();
       } else if (target === "report") {
         renderReport();
+      } else if (target === "card") {
+        renderCard();
       }
       window.scrollTo({ top: 0, behavior: "auto" });
       return;
@@ -453,9 +570,8 @@
 
     const years = [...new Set(
       allExpenses
-        .map((item) => new Date(item.ocorrido_em))
-        .filter((date) => !Number.isNaN(date.getTime()))
-        .map((date) => date.getFullYear())
+        .map((item) => competenciaParts(item.competencia).year)
+        .filter((year) => year > 0)
     )].sort((a, b) => b - a);
 
     elements.yearFilter.innerHTML = [
@@ -494,10 +610,10 @@
         if (category !== selectedCategoryFilter) return false;
       }
 
-      const date = new Date(item.ocorrido_em);
-      if (Number.isNaN(date.getTime())) return !selectedMonth && !selectedYear;
-      if (selectedMonth && date.getMonth() + 1 !== selectedMonth) return false;
-      if (selectedYear && date.getFullYear() !== selectedYear) return false;
+      const { year, month } = competenciaParts(item.competencia);
+      if (!year || !month) return !selectedMonth && !selectedYear;
+      if (selectedMonth && month !== selectedMonth) return false;
+      if (selectedYear && year !== selectedYear) return false;
       return true;
     });
   }
@@ -524,13 +640,13 @@
           ? `<p class="expense-note">${escapeHtml(item.observacao)}</p>`
           : "";
 
-        const date = new Date(item.ocorrido_em);
+        const date = new Date(item.data_compra || item.ocorrido_em);
         const formattedDate = Number.isNaN(date.getTime())
           ? "Data inválida"
           : dateFormatter.format(date);
 
-        const installments = item.forma === "NUBANK"
-          ? ` · ${Number(item.parcelas || 1)}x`
+        const installments = Number(item.parcela_total) > 1
+          ? ` · ${Number(item.parcela_num || 1)}/${Number(item.parcela_total)}`
           : "";
 
         return `
@@ -615,9 +731,8 @@
 
     const years = [...new Set(
       allExpenses
-        .map((item) => new Date(item.ocorrido_em))
-        .filter((date) => !Number.isNaN(date.getTime()))
-        .map((date) => date.getFullYear())
+        .map((item) => competenciaParts(item.competencia).year)
+        .filter((year) => year > 0)
     )];
     if (!years.includes(currentYear)) years.push(currentYear);
     years.sort((a, b) => b - a);
@@ -644,9 +759,8 @@
     const year = Number(elements.dashboardYearFilter.value || now.getFullYear());
 
     const items = allExpenses.filter((item) => {
-      const date = new Date(item.ocorrido_em);
-      if (Number.isNaN(date.getTime())) return false;
-      return date.getMonth() + 1 === month && date.getFullYear() === year;
+      const parts = competenciaParts(item.competencia);
+      return parts.month === month && parts.year === year;
     });
 
     const total = items.reduce((sum, item) => sum + Number(item.valor || 0), 0);
@@ -758,9 +872,8 @@
     const currentYear = now.getFullYear();
     const years = [...new Set(
       allExpenses
-        .map((item) => new Date(item.ocorrido_em))
-        .filter((date) => !Number.isNaN(date.getTime()))
-        .map((date) => date.getFullYear())
+        .map((item) => competenciaParts(item.competencia).year)
+        .filter((year) => year > 0)
     )];
     if (!years.includes(currentYear)) years.push(currentYear);
     years.sort((a, b) => b - a);
@@ -797,12 +910,12 @@
       const category = item.orcamento || "Sem categoria";
       if (selectedCategory && category !== selectedCategory) return false;
 
-      const date = new Date(item.ocorrido_em);
-      if (Number.isNaN(date.getTime())) {
+      const { year: compYear, month: compMonth } = competenciaParts(item.competencia);
+      if (!compYear || !compMonth) {
         if (selectedMonth || selectedYear) return false;
       } else {
-        if (selectedMonth && date.getMonth() + 1 !== selectedMonth) return false;
-        if (selectedYear && date.getFullYear() !== selectedYear) return false;
+        if (selectedMonth && compMonth !== selectedMonth) return false;
+        if (selectedYear && compYear !== selectedYear) return false;
       }
 
       if (searchTerm) {
@@ -850,11 +963,13 @@
 
         const rows = groupItems
           .map((item) => {
-            const date = new Date(item.ocorrido_em);
+            const date = new Date(item.data_compra || item.ocorrido_em);
             const formattedDate = Number.isNaN(date.getTime())
               ? "Data inválida"
               : dateFormatter.format(date);
-            const installments = item.forma === "NUBANK" ? ` · ${Number(item.parcelas || 1)}x` : "";
+            const installments = Number(item.parcela_total) > 1
+              ? ` · ${Number(item.parcela_num || 1)}/${Number(item.parcela_total)}`
+              : "";
             const note = item.observacao
               ? `<p class="report-row-note">${escapeHtml(item.observacao)}</p>`
               : "";
@@ -885,6 +1000,324 @@
       .join("");
   }
 
+  // ---- Cartão de crédito -------------------------------------------------
+  function currentPurchaseDate() {
+    if (elements.agora.checked || !elements.dateInput.value) return new Date();
+    const parsed = new Date(elements.dateInput.value);
+    return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  }
+
+  function updateFaturaField() {
+    const isNubank = elements.forma.value === "NUBANK";
+    elements.faturaField.classList.toggle("hidden", !isNubank);
+    if (!isNubank) return;
+
+    const cfg = cardConfig || DEFAULT_CARD_CONFIG;
+
+    if (!faturaManual) {
+      const iso = competenciaFromPurchase(currentPurchaseDate(), cfg.dia_fechamento, cfg.dia_vencimento);
+      const { year, month } = competenciaParts(iso);
+      elements.faturaInput.value = `${year}-${String(month).padStart(2, "0")}`;
+    }
+
+    elements.faturaReset.classList.toggle("hidden", !faturaManual);
+    elements.faturaHint.textContent = faturaManual
+      ? "Fatura definida manualmente."
+      : `Calculada pelo fechamento dia ${cfg.dia_fechamento} e vencimento dia ${cfg.dia_vencimento}.`;
+  }
+
+  function updateInstallmentHint() {
+    const isNubank = elements.forma.value === "NUBANK";
+    const parcelaTotal = Number(elements.parcelas.value || 1);
+    const total = parseMoney(elements.valor.value);
+
+    if (isNubank && parcelaTotal > 1 && Number.isFinite(total) && total > 0) {
+      const base = Math.round((total / parcelaTotal) * 100) / 100;
+      elements.installmentHint.textContent =
+        `${moneyFormatter.format(total)} no total — ${parcelaTotal}x de ${moneyFormatter.format(base)}, lançadas mês a mês na fatura.`;
+      elements.installmentHint.classList.remove("hidden");
+    } else {
+      elements.installmentHint.textContent = "";
+      elements.installmentHint.classList.add("hidden");
+    }
+  }
+
+  function renderCard() {
+    if (!cardCompetencia) cardCompetencia = competenciaMonthISO(new Date());
+
+    const cfg = cardConfig || DEFAULT_CARD_CONFIG;
+    const { month } = competenciaParts(cardCompetencia);
+
+    elements.cardConfigSummary.textContent =
+      `Fecha dia ${cfg.dia_fechamento} · vence dia ${cfg.dia_vencimento}`;
+    elements.cardPeriod.textContent = competenciaLabel(cardCompetencia);
+    elements.cardCycleInfo.textContent =
+      `Fecha ${String(cfg.dia_fechamento).padStart(2, "0")}/${String(month).padStart(2, "0")}` +
+      ` · vence ${String(cfg.dia_vencimento).padStart(2, "0")}/${String(month).padStart(2, "0")}`;
+
+    const purchases = allExpenses
+      .filter((item) => item.forma === "NUBANK" && sameCompetencia(item.competencia, cardCompetencia))
+      .slice()
+      .sort((a, b) =>
+        new Date(b.data_compra || b.ocorrido_em) - new Date(a.data_compra || a.ocorrido_em));
+
+    let comprasTotal = purchases.reduce((sum, item) => sum + Number(item.valor || 0), 0);
+
+    const saldoInicial = Number(cfg.saldo_inicial || 0);
+    const saldoAplica = saldoInicial > 0 && sameCompetencia(cfg.saldo_inicial_competencia, cardCompetencia);
+    if (saldoAplica) comprasTotal += saldoInicial;
+
+    const pagamentos = cardPayments
+      .filter((payment) => sameCompetencia(payment.competencia, cardCompetencia))
+      .slice()
+      .sort((a, b) => new Date(b.pago_em) - new Date(a.pago_em));
+    const pagoTotal = pagamentos.reduce((sum, payment) => sum + Number(payment.valor || 0), 0);
+
+    const emAberto = Math.round((comprasTotal - pagoTotal) * 100) / 100;
+    cardEmAberto = emAberto;
+
+    elements.cardTotal.textContent = moneyFormatter.format(comprasTotal);
+    elements.cardPaid.textContent = moneyFormatter.format(pagoTotal);
+    elements.cardOpen.textContent = emAberto > 0.005
+      ? moneyFormatter.format(emAberto)
+      : `${moneyFormatter.format(Math.max(0, emAberto))} · quitada`;
+    elements.cardOpen.classList.toggle("pending", emAberto > 0.005);
+
+    const referencia = competenciaMonthISO(new Date());
+    const futuras = allExpenses.filter(
+      (item) => item.forma === "NUBANK" && competenciaIsAfter(item.competencia, referencia)
+    );
+    const futuroTotal = futuras.reduce((sum, item) => sum + Number(item.valor || 0), 0);
+    const mesesFuturos = new Set(futuras.map((item) => item.competencia)).size;
+
+    elements.cardFutureTotal.textContent = moneyFormatter.format(futuroTotal);
+    elements.cardFutureDetail.textContent = futuras.length
+      ? `${futuras.length} ${futuras.length === 1 ? "parcela" : "parcelas"} em ` +
+        `${mesesFuturos} ${mesesFuturos === 1 ? "mês" : "meses"}`
+      : "Nada lançado para os próximos meses.";
+
+    elements.cardPaymentsList.innerHTML = pagamentos.length
+      ? pagamentos
+          .map((payment) => {
+            const paidDate = new Date(payment.pago_em);
+            const dateLabel = Number.isNaN(paidDate.getTime())
+              ? "Data inválida"
+              : dateOnlyFormatter.format(paidDate);
+            const note = payment.observacao ? ` · ${escapeHtml(payment.observacao)}` : "";
+            return `
+              <div class="card-payment-item">
+                <div>
+                  <strong>${moneyFormatter.format(Number(payment.valor || 0))}</strong>
+                  <span>${escapeHtml(dateLabel)}${note}</span>
+                </div>
+                <button type="button" class="expense-action-button danger" data-payment-id="${escapeHtml(payment.id)}">
+                  <span>Excluir</span>
+                </button>
+              </div>`;
+          })
+          .join("")
+      : '<p class="empty-state">Nenhum pagamento registrado para esta fatura.</p>';
+
+    const saldoRow = saldoAplica
+      ? `
+        <div class="report-row">
+          <div class="report-row-main">
+            <span class="report-row-name">Saldo inicial da fatura</span>
+            <span class="report-row-meta">Dívida lançada como saldo de abertura</span>
+          </div>
+          <span class="report-row-value">${moneyFormatter.format(saldoInicial)}</span>
+        </div>`
+      : "";
+
+    const purchaseRows = purchases
+      .map((item) => {
+        const purchaseDate = new Date(item.data_compra || item.ocorrido_em);
+        const dateLabel = Number.isNaN(purchaseDate.getTime())
+          ? "Data inválida"
+          : dateOnlyFormatter.format(purchaseDate);
+        const parcela = Number(item.parcela_total) > 1
+          ? ` · ${Number(item.parcela_num || 1)}/${Number(item.parcela_total)}`
+          : "";
+        return `
+          <div class="report-row">
+            <div class="report-row-main">
+              <span class="report-row-name">${escapeHtml(item.gasto)}</span>
+              <span class="report-row-meta">${escapeHtml(getMemberLabel(item.user_id))}${parcela} · compra ${escapeHtml(dateLabel)} · ${escapeHtml(item.orcamento || "Sem categoria")}</span>
+            </div>
+            <span class="report-row-value">${moneyFormatter.format(Number(item.valor || 0))}</span>
+          </div>`;
+      })
+      .join("");
+
+    elements.cardPurchasesList.innerHTML = (saldoRow + purchaseRows) ||
+      '<p class="empty-state">Nenhuma compra no crédito nesta fatura.</p>';
+  }
+
+  function showCardConfigEdit(show) {
+    elements.cardConfigDisplay.classList.toggle("hidden", show);
+    elements.cardConfigEdit.classList.toggle("hidden", !show);
+    if (!show) return;
+
+    const cfg = cardConfig || DEFAULT_CARD_CONFIG;
+    elements.cardClosingInput.value = cfg.dia_fechamento;
+    elements.cardDueInput.value = cfg.dia_vencimento;
+    elements.cardInitialInput.value = Number(cfg.saldo_inicial) > 0
+      ? Number(cfg.saldo_inicial).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      : "";
+    const parts = competenciaParts(cfg.saldo_inicial_competencia);
+    elements.cardInitialMonthInput.value = parts.year && parts.month
+      ? `${parts.year}-${String(parts.month).padStart(2, "0")}`
+      : "";
+  }
+
+  async function saveCardConfig() {
+    if (!supabaseClient || !currentSession) return;
+    if (!navigator.onLine) {
+      showToast("Sem internet: não é possível salvar a configuração agora.");
+      return;
+    }
+
+    const closing = Number(elements.cardClosingInput.value);
+    const due = Number(elements.cardDueInput.value);
+
+    if (!Number.isInteger(closing) || closing < 1 || closing > 28) {
+      showToast("Dia de fechamento inválido (use um número de 1 a 28).");
+      return;
+    }
+    if (!Number.isInteger(due) || due < 1 || due > 28) {
+      showToast("Dia de vencimento inválido (use um número de 1 a 28).");
+      return;
+    }
+
+    const saldoParsed = parseMoney(elements.cardInitialInput.value);
+    const saldoInicial = Number.isFinite(saldoParsed) && saldoParsed > 0 ? saldoParsed : 0;
+    const monthValue = elements.cardInitialMonthInput.value;
+    const saldoComp = saldoInicial > 0 && monthValue ? `${monthValue}-01` : null;
+
+    setLoading(elements.saveCardConfigButton, true, "Salvando...", "Salvar");
+
+    try {
+      const { error } = await supabaseClient
+        .from("configuracoes_cartao")
+        .update({
+          dia_fechamento: closing,
+          dia_vencimento: due,
+          saldo_inicial: saldoInicial,
+          saldo_inicial_competencia: saldoComp,
+          atualizado_em: new Date().toISOString()
+        })
+        .eq("id", true);
+
+      if (error) throw error;
+
+      cardConfig = {
+        dia_fechamento: closing,
+        dia_vencimento: due,
+        saldo_inicial: saldoInicial,
+        saldo_inicial_competencia: saldoComp
+      };
+      showCardConfigEdit(false);
+      renderCard();
+      updateFaturaField();
+      showToast("Configuração do cartão salva.");
+    } catch (error) {
+      console.error("Erro ao salvar a configuração do cartão:", error);
+      showToast(`Não foi possível salvar: ${error?.message || "erro desconhecido"}`);
+    } finally {
+      setLoading(elements.saveCardConfigButton, false, "Salvando...", "Salvar");
+    }
+  }
+
+  function showPaymentForm(show) {
+    elements.cardPaymentForm.classList.toggle("hidden", !show);
+    elements.cardPaymentToggle.classList.toggle("hidden", show);
+    if (!show) return;
+
+    const cfg = cardConfig || DEFAULT_CARD_CONFIG;
+    const { year, month } = competenciaParts(cardCompetencia);
+    const dueDay = Math.min(28, Math.max(1, Number(cfg.dia_vencimento || 10)));
+
+    elements.cardPaymentDate.value =
+      `${year}-${String(month).padStart(2, "0")}-${String(dueDay).padStart(2, "0")}`;
+    elements.cardPaymentValue.value = cardEmAberto > 0.005
+      ? cardEmAberto.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      : "";
+    elements.cardPaymentObs.value = "";
+    window.setTimeout(() => elements.cardPaymentValue.focus(), 0);
+  }
+
+  async function savePayment() {
+    if (!supabaseClient || !currentSession) return;
+    if (!navigator.onLine) {
+      showToast("Sem internet: não é possível registrar o pagamento agora.");
+      return;
+    }
+
+    const valor = parseMoney(elements.cardPaymentValue.value);
+    if (!Number.isFinite(valor) || valor <= 0) {
+      showToast("Informe um valor de pagamento válido.");
+      return;
+    }
+
+    const [py, pm, pd] = String(elements.cardPaymentDate.value || "").split("-").map(Number);
+    if (!py || !pm || !pd) {
+      showToast("Informe a data do pagamento.");
+      return;
+    }
+    const pagoEm = new Date(py, pm - 1, pd, 12, 0, 0);
+
+    setLoading(elements.cardPaymentSave, true, "Salvando...", "Salvar pagamento");
+
+    try {
+      const { error } = await supabaseClient.from("pagamentos_cartao").insert({
+        competencia: cardCompetencia,
+        valor,
+        pago_em: pagoEm.toISOString(),
+        observacao: elements.cardPaymentObs.value.trim() || null
+      });
+
+      if (error) throw error;
+
+      historyNeedsRefresh = true;
+      await loadRecent();
+      showPaymentForm(false);
+      showToast("Pagamento da fatura registrado.");
+    } catch (error) {
+      console.error("Erro ao registrar pagamento da fatura:", error);
+      showToast(`Não foi possível salvar: ${error?.message || "erro desconhecido"}`);
+    } finally {
+      setLoading(elements.cardPaymentSave, false, "Salvando...", "Salvar pagamento");
+    }
+  }
+
+  function handleCardPaymentsClick(event) {
+    const button = event.target.closest("[data-payment-id]");
+    if (!button) return;
+    void deletePayment(button.dataset.paymentId);
+  }
+
+  async function deletePayment(paymentId) {
+    if (!navigator.onLine) {
+      showToast("Sem internet: não é possível excluir agora.");
+      return;
+    }
+
+    const confirmed = await askConfirmation("Excluir este pagamento da fatura?");
+    if (!confirmed) return;
+
+    try {
+      const { error } = await supabaseClient.from("pagamentos_cartao").delete().eq("id", paymentId);
+      if (error) throw error;
+
+      cardPayments = cardPayments.filter((payment) => String(payment.id) !== String(paymentId));
+      renderCard();
+      showToast("Pagamento excluído.");
+    } catch (error) {
+      console.error("Erro ao excluir pagamento:", error);
+      showToast(`Não foi possível excluir: ${error?.message || "erro desconhecido"}`);
+    }
+  }
+
   async function fetchAllExpenses() {
     const pageSize = 1000;
     const items = [];
@@ -893,7 +1326,7 @@
     while (true) {
       const { data, error } = await supabaseClient
         .from("gastos")
-        .select("id,user_id,gasto,valor,forma,parcelas,orcamento,ocorrido_em,observacao")
+        .select("id,user_id,gasto,valor,forma,parcelas,orcamento,ocorrido_em,observacao,data_compra,competencia,grupo_parcelamento,parcela_num,parcela_total")
         .order("ocorrido_em", { ascending: false })
         .range(start, start + pageSize - 1);
 
@@ -914,26 +1347,47 @@
     elements.recentList.setAttribute("aria-busy", "true");
 
     try {
-      const [membersResult, expenses] = await Promise.all([
+      const [membersResult, expenses, cardConfigResult, cardPaymentsResult] = await Promise.all([
         supabaseClient
           .from("membros_casal")
           .select("user_id,nome,email")
           .order("nome", { ascending: true }),
-        fetchAllExpenses()
+        fetchAllExpenses(),
+        supabaseClient
+          .from("configuracoes_cartao")
+          .select("dia_fechamento,dia_vencimento,saldo_inicial,saldo_inicial_competencia")
+          .eq("id", true)
+          .maybeSingle(),
+        supabaseClient
+          .from("pagamentos_cartao")
+          .select("id,user_id,competencia,valor,pago_em,observacao")
+          .order("pago_em", { ascending: false })
       ]);
 
       if (membersResult.error) throw membersResult.error;
+      if (cardConfigResult.error) throw cardConfigResult.error;
+      if (cardPaymentsResult.error) throw cardPaymentsResult.error;
 
       membersById = new Map(
         (membersResult.data || []).map((member) => [member.user_id, member])
       );
-      allExpenses = expenses;
+      allExpenses = (expenses || []).map((item) => ({
+        ...item,
+        competencia: item.competencia || competenciaMonthISO(item.ocorrido_em)
+      }));
+      cardConfig = cardConfigResult.data
+        ? { ...DEFAULT_CARD_CONFIG, ...cardConfigResult.data }
+        : { ...DEFAULT_CARD_CONFIG };
+      cardPayments = cardPaymentsResult.data || [];
+
       populateHistoryFilters();
       applyHistoryFilters();
       populateDashboardFilters();
       renderDashboard();
       populateReportFilters();
       renderReport();
+      renderCard();
+      updateFaturaField();
       historyNeedsRefresh = false;
     } catch (error) {
       elements.recentList.innerHTML = `<p class="empty-state">Não foi possível carregar: ${escapeHtml(
@@ -1140,8 +1594,12 @@
     elements.forma.value = getLastForma();
     elements.parcelas.value = "1";
     elements.orcamento.value = getLastOrcamento();
+    faturaManual = false;
+    elements.faturaInput.value = "";
     toggleInstallmentsField();
     toggleDateField();
+    updateFaturaField();
+    updateInstallmentHint();
     elements.gasto.focus();
   }
 
@@ -1167,12 +1625,20 @@
     elements.orcamento.value = ALLOWED_BUDGET_CATEGORIES.has(item.orcamento) ? item.orcamento : "";
     elements.observacao.value = item.observacao || "";
 
-    const occurredAt = new Date(item.ocorrido_em);
+    const occurredAt = new Date(item.data_compra || item.ocorrido_em);
     elements.agora.checked = false;
     elements.dateInput.value = Number.isNaN(occurredAt.getTime())
       ? toLocalDateTimeValue()
       : toLocalDateTimeValue(occurredAt);
     toggleDateField();
+
+    faturaManual = true;
+    const editComp = competenciaParts(item.competencia);
+    elements.faturaInput.value = editComp.year && editComp.month
+      ? `${editComp.year}-${String(editComp.month).padStart(2, "0")}`
+      : "";
+    updateFaturaField();
+    updateInstallmentHint();
 
     elements.editBanner.classList.remove("hidden");
     elements.saveButton.textContent = "Atualizar gasto";
@@ -1275,9 +1741,17 @@
       monthlyIncome = 0;
       elements.dashboardIncomeValue.textContent = moneyFormatter.format(0);
       showIncomeEdit(false);
+      cardConfig = null;
+      cardPayments = [];
+      cardCompetencia = "";
+      cardEmAberto = 0;
+      faturaManual = false;
+      showCardConfigEdit(false);
+      showPaymentForm(false);
       historyNeedsRefresh = true;
       renderDashboard();
       renderReport();
+      renderCard();
       showAppScreen("entry");
       return;
     }
@@ -1394,6 +1868,19 @@
       }
     }
 
+    const isNubank = forma === "NUBANK";
+    const parcelaTotal = isNubank ? Math.min(12, Math.max(1, parcelas)) : 1;
+
+    let competencia1;
+    if (isNubank && faturaManual && elements.faturaInput.value) {
+      competencia1 = `${elements.faturaInput.value}-01`;
+    } else if (isNubank) {
+      const cfg = cardConfig || DEFAULT_CARD_CONFIG;
+      competencia1 = competenciaFromPurchase(occurredAt, cfg.dia_fechamento, cfg.dia_vencimento);
+    } else {
+      competencia1 = competenciaMonthISO(occurredAt);
+    }
+
     const basePayload = {
       gasto,
       valor,
@@ -1401,6 +1888,7 @@
       parcelas,
       orcamento,
       ocorrido_em: occurredAt.toISOString(),
+      data_compra: occurredAt.toISOString(),
       observacao: observacao || null
     };
 
@@ -1415,14 +1903,15 @@
       }
 
       const editingId = editingExpenseId;
+      const editPayload = { ...basePayload, competencia: competencia1 };
       setLoading(elements.saveButton, true, "Atualizando...", "Atualizar gasto");
 
       try {
-        const { error } = await supabaseClient.from("gastos").update(basePayload).eq("id", editingId);
+        const { error } = await supabaseClient.from("gastos").update(editPayload).eq("id", editingId);
         if (error) throw error;
 
         allExpenses = allExpenses.map((expense) =>
-          expense.id === editingId ? { ...expense, ...basePayload } : expense
+          expense.id === editingId ? { ...expense, ...editPayload } : expense
         );
         rememberLastChoice(forma, orcamento);
         populateHistoryFilters();
@@ -1431,6 +1920,7 @@
         renderDashboard();
         populateReportFilters();
         renderReport();
+        renderCard();
 
         exitEditMode();
         resetExpenseForm();
@@ -1449,7 +1939,75 @@
       return;
     }
 
-    const payload = { ...basePayload, client_id: randomUuid() };
+    if (isNubank && parcelaTotal > 1) {
+      if (!navigator.onLine) {
+        setMessage(
+          elements.expenseMessage,
+          "Sem internet: compras parceladas precisam de conexão. Tente de novo quando a internet voltar.",
+          "error"
+        );
+        return;
+      }
+
+      const grupo = randomUuid();
+      const baseParcela = Math.round((valor / parcelaTotal) * 100) / 100;
+      const rows = [];
+      for (let numero = 1; numero <= parcelaTotal; numero += 1) {
+        const parcelaValor = numero === parcelaTotal
+          ? Math.round((valor - baseParcela * (parcelaTotal - 1)) * 100) / 100
+          : baseParcela;
+        rows.push({
+          gasto,
+          valor: parcelaValor,
+          forma,
+          parcelas: parcelaTotal,
+          orcamento,
+          ocorrido_em: occurredAt.toISOString(),
+          data_compra: occurredAt.toISOString(),
+          competencia: addMonthsISO(competencia1, numero - 1),
+          grupo_parcelamento: grupo,
+          parcela_num: numero,
+          parcela_total: parcelaTotal,
+          observacao: observacao || null,
+          client_id: randomUuid()
+        });
+      }
+
+      setLoading(elements.saveButton, true, "Salvando...", "Salvar gasto");
+
+      try {
+        const { error } = await supabaseClient.from("gastos").insert(rows);
+        if (error) throw error;
+
+        rememberLastChoice(forma, orcamento);
+        resetExpenseForm();
+        historyNeedsRefresh = true;
+        setMessage(
+          elements.expenseMessage,
+          `Compra em ${parcelaTotal}x registrada: ${moneyFormatter.format(baseParcela)} por mês na fatura.`,
+          "success"
+        );
+        showToast(`Compra parcelada em ${parcelaTotal}x registrada!`);
+      } catch (error) {
+        console.error("Erro ao salvar compra parcelada:", error);
+        setMessage(
+          elements.expenseMessage,
+          `Não foi possível salvar. ${error?.message || "Erro desconhecido."}`,
+          "error"
+        );
+      } finally {
+        setLoading(elements.saveButton, false, "Salvando...", "Salvar gasto");
+      }
+      return;
+    }
+
+    const payload = {
+      ...basePayload,
+      competencia: competencia1,
+      parcela_num: 1,
+      parcela_total: 1,
+      client_id: randomUuid()
+    };
 
     if (!navigator.onLine) {
       queueOfflineExpense(payload);
@@ -1529,8 +2087,22 @@
     await removeOldServiceWorkersAndCaches();
 
     elements.agora.addEventListener("change", toggleDateField);
+    elements.agora.addEventListener("change", updateFaturaField);
+    elements.dateInput.addEventListener("change", updateFaturaField);
     elements.forma.addEventListener("change", toggleInstallmentsField);
+    elements.forma.addEventListener("change", updateFaturaField);
+    elements.forma.addEventListener("change", updateInstallmentHint);
+    elements.parcelas.addEventListener("change", updateInstallmentHint);
     elements.valor.addEventListener("blur", formatMoneyInput);
+    elements.valor.addEventListener("blur", updateInstallmentHint);
+    elements.faturaInput.addEventListener("input", () => {
+      faturaManual = true;
+      updateFaturaField();
+    });
+    elements.faturaReset.addEventListener("click", () => {
+      faturaManual = false;
+      updateFaturaField();
+    });
     elements.loginForm.addEventListener("submit", handleLogin);
     elements.expenseForm.addEventListener("submit", handleSave);
     elements.refreshButton.addEventListener("click", loadRecent);
@@ -1540,6 +2112,7 @@
     elements.openHistoryButton.addEventListener("click", () => showAppScreen("history"));
     elements.openDashboardButton.addEventListener("click", () => showAppScreen("dashboard"));
     elements.openReportButton.addEventListener("click", () => showAppScreen("report"));
+    elements.openCardButton.addEventListener("click", () => showAppScreen("card"));
     elements.dashboardMonthFilter.addEventListener("change", renderDashboard);
     elements.dashboardYearFilter.addEventListener("change", renderDashboard);
     elements.editIncomeButton.addEventListener("click", () => showIncomeEdit(true));
@@ -1555,6 +2128,24 @@
     elements.backEntryButton.addEventListener("click", () => showAppScreen("entry"));
     elements.backDashboardButton.addEventListener("click", () => showAppScreen("entry"));
     elements.backReportButton.addEventListener("click", () => showAppScreen("entry"));
+    elements.backCardButton.addEventListener("click", () => showAppScreen("entry"));
+    elements.cardPrevButton.addEventListener("click", () => {
+      cardCompetencia = addMonthsISO(cardCompetencia || competenciaMonthISO(new Date()), -1);
+      renderCard();
+    });
+    elements.cardNextButton.addEventListener("click", () => {
+      cardCompetencia = addMonthsISO(cardCompetencia || competenciaMonthISO(new Date()), 1);
+      renderCard();
+    });
+    elements.editCardConfigButton.addEventListener("click", () => showCardConfigEdit(true));
+    elements.cancelCardConfigButton.addEventListener("click", () => showCardConfigEdit(false));
+    elements.saveCardConfigButton.addEventListener("click", () => void saveCardConfig());
+    elements.cardInitialInput.addEventListener("blur", formatMoneyInput);
+    elements.cardPaymentToggle.addEventListener("click", () => showPaymentForm(true));
+    elements.cardPaymentCancel.addEventListener("click", () => showPaymentForm(false));
+    elements.cardPaymentSave.addEventListener("click", () => void savePayment());
+    elements.cardPaymentValue.addEventListener("blur", formatMoneyInput);
+    elements.cardPaymentsList.addEventListener("click", handleCardPaymentsClick);
     elements.recentList.addEventListener("click", handleHistoryListClick);
     elements.categorySummary.addEventListener("click", handleCategorySummaryClick);
     elements.cancelEditButton.addEventListener("click", () => {
@@ -1570,6 +2161,8 @@
 
     toggleInstallmentsField();
     toggleDateField();
+    updateFaturaField();
+    updateInstallmentHint();
 
     const configProblems = validateConfig();
     if (configProblems.length > 0) {

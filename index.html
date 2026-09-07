@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#f4f7fb" />
   <meta name="description" content="Registro rápido dos gastos da casa." />
-  <link rel="icon" href="icons/icon-192.png?v=2.8.0" />
-  <link rel="apple-touch-icon" href="icons/icon-192.png?v=2.8.0" />
+  <link rel="icon" href="icons/icon-192.png?v=2.9.0" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png?v=2.9.0" />
   <link rel="manifest" href="manifest.json" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -23,7 +23,7 @@
     })();
   </script>
 
-  <link rel="stylesheet" href="styles.css?v=2.8.0" />
+  <link rel="stylesheet" href="styles.css?v=2.9.0" />
   <title>Gastos da Casa</title>
 </head>
 <body>
@@ -120,6 +120,13 @@
                 </svg>
                 <span>Relatório</span>
               </button>
+              <button id="open-card-button" class="history-button" type="button">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="2" y="5" width="20" height="14" rx="2"></rect>
+                  <path d="M2 10h20"></path>
+                </svg>
+                <span>Cartão</span>
+              </button>
             </div>
           </div>
 
@@ -211,6 +218,7 @@
                 <option value="12">12 parcelas</option>
               </select>
               <small>Informe em quantas vezes a compra foi parcelada no Nubank.</small>
+              <small id="installment-hint" class="hidden"></small>
             </label>
 
             <div class="field field-full date-control">
@@ -228,6 +236,15 @@
               <span>Data e hora do gasto</span>
               <input id="data-hora" name="data-hora" type="datetime-local" />
             </label>
+
+            <div id="fatura-field" class="field field-full fatura-field hidden">
+              <span class="field-title">Fatura (mês de cobrança)</span>
+              <div class="fatura-control">
+                <input id="fatura-competencia" type="month" />
+                <button id="fatura-reset" type="button" class="text-button hidden">Recalcular</button>
+              </div>
+              <small id="fatura-hint"></small>
+            </div>
 
             <label class="field field-full budget-field">
               <span>Orçamento</span>
@@ -576,6 +593,154 @@
           </div>
         </div>
       </section>
+
+      <section id="card-screen" class="app-screen history-screen hidden" aria-labelledby="card-title">
+        <header class="app-header history-header">
+          <div class="history-toolbar">
+            <button id="back-card-button" class="back-button" type="button" aria-label="Voltar para novo gasto">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m15 18-6-6 6-6"></path>
+              </svg>
+              <span>Novo gasto</span>
+            </button>
+
+            <div class="header-actions">
+              <button class="theme-toggle theme-toggle-compact" type="button" data-theme-toggle aria-label="Ativar modo escuro">
+                <svg class="theme-icon theme-icon-moon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M21 12.7A8.5 8.5 0 1 1 11.3 3a6.6 6.6 0 0 0 9.7 9.7Z"></path>
+                </svg>
+                <svg class="theme-icon theme-icon-sun" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="12" cy="12" r="4"></circle>
+                  <path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.41M17.66 6.34l1.41-1.41"></path>
+                </svg>
+                <span class="theme-toggle-label">Escuro</span>
+              </button>
+
+              <button class="logout-button text-button" type="button">Sair</button>
+            </div>
+          </div>
+
+          <div class="history-title-row">
+            <div>
+              <p class="eyebrow">CARTÃO DE CRÉDITO</p>
+              <h1 id="card-title">Cartão</h1>
+              <p class="history-subtitle">Fatura do Nubank por mês: compras, parcelas e pagamentos.</p>
+            </div>
+          </div>
+        </header>
+
+        <section class="card card-config" aria-label="Configuração do cartão">
+          <div id="card-config-display" class="card-config-row">
+            <div>
+              <span>Ciclo da fatura</span>
+              <strong id="card-config-summary">Fecha dia 3 · vence dia 10</strong>
+            </div>
+            <button id="edit-card-config-button" type="button" class="text-button">Editar</button>
+          </div>
+
+          <div id="card-config-edit" class="card-config-edit hidden">
+            <div class="card-config-grid">
+              <label class="field">
+                <span>Dia de fechamento</span>
+                <input id="card-closing-input" type="number" min="1" max="28" inputmode="numeric" />
+              </label>
+              <label class="field">
+                <span>Dia de vencimento</span>
+                <input id="card-due-input" type="number" min="1" max="28" inputmode="numeric" />
+              </label>
+            </div>
+
+            <label class="field field-full">
+              <span>Saldo inicial da fatura (dívida de antes)</span>
+              <div class="money-input">
+                <span aria-hidden="true">R$</span>
+                <input id="card-initial-input" type="text" inputmode="decimal" placeholder="0,00" />
+              </div>
+            </label>
+
+            <label class="field field-full">
+              <span>Mês do saldo inicial</span>
+              <input id="card-initial-month-input" type="month" />
+            </label>
+
+            <div class="card-config-actions">
+              <button id="cancel-card-config-button" type="button" class="text-button">Cancelar</button>
+              <button id="save-card-config-button" type="button" class="primary-button">Salvar</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="card card-invoice" aria-label="Fatura do mês">
+          <div class="card-invoice-nav">
+            <button id="card-prev-button" type="button" class="card-nav-button" aria-label="Fatura anterior">‹</button>
+            <div class="card-invoice-period">
+              <strong id="card-period">—</strong>
+              <small id="card-cycle-info">—</small>
+            </div>
+            <button id="card-next-button" type="button" class="card-nav-button" aria-label="Próxima fatura">›</button>
+          </div>
+
+          <div class="dashboard-summary">
+            <div class="dashboard-summary-item">
+              <span>Total da fatura</span>
+              <strong id="card-total">R$ 0,00</strong>
+            </div>
+            <div class="dashboard-summary-item">
+              <span>Pago</span>
+              <strong id="card-paid">R$ 0,00</strong>
+            </div>
+            <div class="dashboard-summary-item dashboard-summary-wide">
+              <span>Em aberto</span>
+              <strong id="card-open">R$ 0,00</strong>
+            </div>
+          </div>
+
+          <div id="card-payment-toggle-wrap">
+            <button id="card-payment-toggle" type="button" class="primary-button">Registrar pagamento da fatura</button>
+          </div>
+
+          <div id="card-payment-form" class="card-payment-form hidden">
+            <div class="card-config-grid">
+              <label class="field">
+                <span>Valor pago</span>
+                <div class="money-input">
+                  <span aria-hidden="true">R$</span>
+                  <input id="card-payment-value" type="text" inputmode="decimal" placeholder="0,00" />
+                </div>
+              </label>
+              <label class="field">
+                <span>Data do pagamento</span>
+                <input id="card-payment-date" type="date" />
+              </label>
+            </div>
+            <label class="field field-full">
+              <span>Observação</span>
+              <input id="card-payment-obs" type="text" maxlength="200" placeholder="Opcional" />
+            </label>
+            <div class="card-config-actions">
+              <button id="card-payment-cancel" type="button" class="text-button">Cancelar</button>
+              <button id="card-payment-save" type="button" class="primary-button">Salvar pagamento</button>
+            </div>
+          </div>
+
+          <div id="card-payments-list" class="card-payments-list"></div>
+        </section>
+
+        <section class="card card-purchases" aria-label="Compras da fatura">
+          <h2 class="dashboard-goals-title">Compras nesta fatura</h2>
+          <div id="card-purchases-list" class="card-purchases-rows"></div>
+        </section>
+
+        <section class="card card-future" aria-label="Parcelas dos próximos meses">
+          <div class="card-future-row">
+            <div>
+              <span>Comprometido nos próximos meses</span>
+              <strong id="card-future-total">R$ 0,00</strong>
+            </div>
+            <small id="card-future-detail">—</small>
+          </div>
+        </section>
+      </section>
     </section>
   </main>
 
@@ -592,7 +757,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="config.js?v=2.8.0"></script>
-  <script src="app.js?v=2.8.0"></script>
+  <script src="config.js?v=2.9.0"></script>
+  <script src="app.js?v=2.9.0"></script>
 </body>
 </html>

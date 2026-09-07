@@ -1320,3 +1320,202 @@ html[data-theme="dark"] .theme-icon-sun { display: block; }
 @media (max-width: 600px) {
   .report-filters-row { grid-template-columns: 1fr 1fr; }
 }
+
+/* Versão 2.9 — gestão do cartão de crédito (fatura, parcelas e pagamentos) */
+.fatura-field .fatura-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fatura-field input[type="month"] { flex: 1 1 auto; }
+
+.fatura-field .text-button {
+  min-height: auto;
+  padding: 0 4px;
+  flex-shrink: 0;
+}
+
+#fatura-hint,
+#installment-hint {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: .74rem;
+  line-height: 1.3;
+}
+
+#installment-hint {
+  color: var(--primary);
+  font-weight: 650;
+}
+
+.card-config,
+.card-invoice,
+.card-purchases,
+.card-future {
+  padding: 14px;
+  margin-bottom: 10px;
+}
+
+.card-config-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.card-config-row > div { min-width: 0; }
+
+.card-config-row span {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--muted);
+  font-size: .72rem;
+  font-weight: 750;
+}
+
+.card-config-row strong { font-size: 1rem; }
+
+.card-config-edit {
+  display: grid;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.card-config-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.card-config-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 2px;
+}
+
+.card-invoice-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.card-invoice-period { text-align: center; min-width: 0; }
+
+.card-invoice-period strong {
+  display: block;
+  font-size: 1.05rem;
+  letter-spacing: -0.02em;
+}
+
+.card-invoice-period small {
+  color: var(--muted);
+  font-size: .72rem;
+}
+
+.card-nav-button {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.card-nav-button:hover { border-color: var(--primary); color: var(--primary); }
+
+#card-open.pending { color: var(--primary); }
+
+#card-payment-toggle-wrap { margin-bottom: 12px; }
+#card-payment-toggle { width: 100%; }
+
+.card-payment-form {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--surface-soft);
+}
+
+.card-payments-list { display: grid; gap: 7px; }
+.card-payments-list:empty { display: none; }
+
+.card-payment-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface-soft);
+}
+
+.card-payment-item > div { min-width: 0; }
+.card-payment-item strong { display: block; font-size: .9rem; }
+.card-payment-item span { color: var(--muted); font-size: .74rem; }
+
+.card-purchases-rows {
+  display: grid;
+  gap: 1px;
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.card-purchases-rows .report-row { background: var(--surface); }
+
+.card-purchases-rows .empty-state {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--surface);
+}
+
+.card-future-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.card-future-row > div { min-width: 0; }
+
+.card-future-row span {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--muted);
+  font-size: .72rem;
+  font-weight: 750;
+}
+
+.card-future-row strong { font-size: 1.1rem; }
+
+.card-future-row small {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: .74rem;
+  text-align: right;
+}
+
+@media (max-width: 600px) {
+  .card-config,
+  .card-invoice,
+  .card-purchases,
+  .card-future { padding: 12px; }
+
+  .card-config-grid { grid-template-columns: 1fr; }
+}
