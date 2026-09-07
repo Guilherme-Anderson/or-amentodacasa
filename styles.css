@@ -1519,3 +1519,134 @@ html[data-theme="dark"] .theme-icon-sun { display: block; }
 
   .card-config-grid { grid-template-columns: 1fr; }
 }
+
+/* Versão 2.9.1 — layout confortável em telas grandes (desktop) */
+@media (min-width: 900px) {
+  .page-shell {
+    width: min(100%, 1120px);
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+
+  .history-subtitle,
+  .subtext { max-width: 64ch; }
+
+  /* Tela de lançamento: sem altura fixa nem rolagem interna no desktop */
+  .entry-screen {
+    display: block;
+    height: auto;
+    overflow: visible;
+  }
+
+  .entry-screen .app-header { margin-bottom: 20px; }
+
+  .expense-form {
+    display: block;
+    width: min(100%, 780px);
+    margin-inline: auto;
+    padding: 28px 32px;
+  }
+
+  .edit-banner {
+    width: min(100%, 780px);
+    margin-inline: auto;
+  }
+
+  .form-fields {
+    overflow: visible;
+    min-height: 0;
+    gap: 16px 20px;
+  }
+
+  .save-area {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 16px;
+    margin-top: 22px;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+  }
+
+  .save-area .form-message { flex: 1 1 auto; margin: 0; }
+  .save-area .primary-button { width: auto; min-width: 240px; }
+
+  /* Navegação e cards um pouco maiores */
+  .history-button {
+    min-height: 38px;
+    padding: 0 14px;
+    font-size: .82rem;
+  }
+
+  .history-button svg { width: 17px; height: 17px; }
+
+  .history-content,
+  .dashboard-content,
+  .card-config,
+  .card-invoice,
+  .card-purchases,
+  .card-future { padding: 20px; }
+
+  /* Filtros com largura fixa, alinhados à esquerda */
+  .filters-row {
+    grid-template-columns: repeat(3, minmax(0, 220px));
+    justify-content: start;
+    gap: 14px;
+  }
+
+  .report-filters-row {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  .filter-field select { min-height: 40px; font-size: .84rem; }
+  .history-filters { padding: 14px 16px; }
+
+  /* CTAs não precisam ocupar a largura toda no desktop */
+  #card-payment-toggle { width: auto; min-width: 320px; }
+  .card-payment-form .card-config-grid { grid-template-columns: repeat(2, minmax(0, 240px)); }
+
+  /* Resumo por categoria em 2 colunas */
+  .category-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  /* Painel */
+  .dashboard-filters-row {
+    grid-template-columns: repeat(2, minmax(0, 200px));
+    justify-content: start;
+  }
+
+  .dashboard-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .dashboard-summary-wide { grid-column: auto; }
+
+  .dashboard-donut-box { width: 172px; height: 172px; }
+  .dashboard-donut-wrap { gap: 32px; max-width: 600px; }
+
+  .dashboard-goals {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 36px;
+  }
+
+  .dashboard-goals .goal-row { padding: 12px 0; }
+  .dashboard-goals .goal-row:nth-last-child(-n+2) { border-bottom: 0; }
+
+  /* Dicas visuais de item interativo (mouse) */
+  .expense-item,
+  .card-payment-item { transition: border-color .15s ease; }
+  .expense-item:hover,
+  .card-payment-item:hover { border-color: var(--primary); }
+  .report-row { transition: background .15s ease; }
+  .report-row:hover { background: var(--surface-soft); }
+}
+
+@media (min-width: 1200px) {
+  /* Listas longas em 2 colunas quando sobra espaço */
+  .recent-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .report-groups {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+}
