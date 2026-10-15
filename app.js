@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const APP_VERSION = "2.11.0";
+  const APP_VERSION = "2.12.0";
   const OFFLINE_QUEUE_KEY = "gastos-da-casa-offline-v2";
   const THEME_STORAGE_KEY = "gastos-da-casa-theme";
   const LAST_FORMA_KEY = "gastos-da-casa-last-forma";
@@ -14,6 +14,9 @@
   };
   const NOTAS_BUCKET = "notas";
   const SCAN_BUTTON_LABEL = "📷 Tirar foto da nota";
+  const PHOTO_DB_NAME = "gastos-da-casa";
+  const PHOTO_STORE = "fotos-pendentes";
+  const PHOTO_MIME_EXTENSIONS = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
   const ALLOWED_PAYMENT_METHODS = new Set(["PIX", "BYBIT", "NUBANK", "ALELO"]);
   const ALLOWED_BUDGET_CATEGORIES = new Set([
     "Dizimo",
@@ -205,7 +208,16 @@
   let cardEmAberto = 0;
   let faturaManual = false;
   let photoNotes = [];
+  let localPhotoNotes = [];
+  let memoryPhotoNotes = [];
+  let photoSyncPromise = null;
+  let photoDbPromise = null;
   let completingNota = null;
+  let appliedUserId = null;
+  let sessionReadyPromise = null;
+  let sessionNetworkProblem = false;
+  let capturedFlashTimer = null;
+  const localThumbUrls = new Map();
 
   const moneyFormatter = new Intl.NumberFormat("pt-BR", {
     style: "currency",
@@ -523,6 +535,8 @@
     syncActiveNav();
 
     if (dataScreens.includes(target)) {
+      // As fotos guardadas no aparelho aparecem já, sem esperar a rede.
+      if (target === "notas") void renderNotas();
       if (historyNeedsRefresh) {
         void loadRecent();
       } else if (target === "dashboard") {
@@ -531,8 +545,6 @@
         renderReport();
       } else if (target === "card") {
         renderCard();
-      } else if (target === "notas") {
-        void renderNotas();
       }
       window.scrollTo({ top: 0, behavior: "auto" });
       return;
@@ -1450,8 +1462,109 @@
     return blob;
   }
 
+  // A foto é guardada primeiro no aparelho (IndexedDB) e só depois enviada.
+  // Assim o toque em "Tirar foto" nunca espera a rede, funciona offline e a
+  // imagem não se perde se o iPhone fechar o app logo depois.
+  function openPhotoDb() {
+    if (!photoDbPromise) {
+      photoDbPromise = new Promise((resolve, reject) => {
+        if (!window.indexedDB) {
+          reject(new Error("IndexedDB indisponível."));
+          return;
+        }
+        const request = window.indexedDB.open(PHOTO_DB_NAME, 1);
+        request.onupgradeneeded = () => {
+          const db = request.result;
+          if (!db.objectStoreNames.contains(PHOTO_STORE)) {
+            db.createObjectStore(PHOTO_STORE, { keyPath: "id" });
+          }
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      }).catch((error) => {
+        photoDbPromise = null;
+        throw error;
+      });
+    }
+    return photoDbPromise;
+  }
+
+  async function withPhotoStore(mode, action) {
+    const db = await openPhotoDb();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(PHOTO_STORE, mode);
+      const request = action(transaction.objectStore(PHOTO_STORE));
+      transaction.oncomplete = () => resolve(request?.result);
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+  }
+
+  async function refreshLocalPhotoNotes() {
+    let stored = [];
+    try {
+      stored = (await withPhotoStore("readonly", (store) => store.getAll())) || [];
+    } catch (error) {
+      console.warn("Não foi possível ler as fotos guardadas no aparelho:", error);
+    }
+
+    const ids = new Set(stored.map((item) => item.id));
+    localPhotoNotes = [...stored, ...memoryPhotoNotes.filter((item) => !ids.has(item.id))]
+      .sort((a, b) => String(b.capturado_em).localeCompare(String(a.capturado_em)));
+
+    for (const [id, url] of localThumbUrls) {
+      if (!localPhotoNotes.some((item) => item.id === id)) {
+        URL.revokeObjectURL(url);
+        localThumbUrls.delete(id);
+      }
+    }
+    return localPhotoNotes;
+  }
+
+  async function removeLocalPhoto(id) {
+    memoryPhotoNotes = memoryPhotoNotes.filter((item) => item.id !== id);
+    try {
+      await withPhotoStore("readwrite", (store) => store.delete(id));
+    } catch (error) {
+      console.warn("Não foi possível apagar a foto guardada no aparelho:", error);
+    }
+    await refreshLocalPhotoNotes();
+  }
+
+  function localThumbUrl(item) {
+    if (!localThumbUrls.has(item.id)) {
+      localThumbUrls.set(item.id, URL.createObjectURL(new Blob([item.data], { type: item.type })));
+    }
+    return localThumbUrls.get(item.id);
+  }
+
+  function storedSessionUser() {
+    try {
+      for (let index = 0; index < localStorage.length; index += 1) {
+        const key = localStorage.key(index) || "";
+        if (!/^sb-.+-auth-token$/.test(key)) continue;
+        const parsed = JSON.parse(localStorage.getItem(key) || "null");
+        const user = parsed?.user || parsed?.currentSession?.user;
+        if (user?.id) return user;
+      }
+    } catch {
+      // Sessão salva ilegível: trata como ausente.
+    }
+    return null;
+  }
+
+  function isNetworkError(error) {
+    if (!navigator.onLine) return true;
+    if (error?.name === "AuthRetryableFetchError") return true;
+    return /failed to fetch|load failed|network|fetch/i.test(String(error?.message || ""));
+  }
+
+  function pendingNotasCount() {
+    return photoNotes.length + localPhotoNotes.length;
+  }
+
   function updateNotasBadge() {
-    const count = photoNotes.length;
+    const count = pendingNotasCount();
     if (elements.notasPendingCount) elements.notasPendingCount.textContent = String(count);
 
     const label = elements.openNotasButton?.querySelector(".notas-btn-label");
@@ -1474,10 +1587,35 @@
     });
   }
 
+  function notaCardHtml({ id, when, thumb, fotoPath, localId, status, statusPending }) {
+    const whenDate = new Date(when);
+    const whenLabel = Number.isNaN(whenDate.getTime()) ? "—" : dateFormatter.format(whenDate);
+    const thumbAttrs = localId
+      ? `data-local-foto="${escapeHtml(localId)}"`
+      : `data-nota-foto="${escapeHtml(fotoPath)}"`;
+    const idAttr = localId
+      ? `data-local-id="${escapeHtml(localId)}"`
+      : `data-nota-id="${escapeHtml(id)}"`;
+    return `
+      <article class="nota-card">
+        <button type="button" class="nota-thumb" ${thumbAttrs}>
+          ${thumb ? `<img src="${escapeHtml(thumb)}" alt="Foto da nota" loading="lazy">` : "<span>sem prévia</span>"}
+        </button>
+        <div class="nota-body">
+          <span class="nota-when">Foto de ${escapeHtml(whenLabel)}</span>
+          ${status ? `<span class="nota-status${statusPending ? " is-pending" : ""}">${escapeHtml(status)}</span>` : ""}
+          <div class="nota-actions">
+            <button type="button" class="primary-button nota-complete" ${idAttr}>Completar</button>
+            <button type="button" class="text-button nota-discard" ${idAttr}>Descartar</button>
+          </div>
+        </div>
+      </article>`;
+  }
+
   async function renderNotas() {
     updateNotasBadge();
 
-    if (!photoNotes.length) {
+    if (!pendingNotasCount()) {
       elements.notasList.innerHTML =
         '<p class="empty-state">Nenhuma nota pendente. Use “Tirar foto da nota” na tela de novo gasto.</p>';
       return;
@@ -1486,81 +1624,179 @@
     elements.notasList.setAttribute("aria-busy", "true");
 
     let signed = [];
-    try {
-      const result = await supabaseClient.storage
-        .from(NOTAS_BUCKET)
-        .createSignedUrls(photoNotes.map((note) => note.foto_path), 3600);
-      signed = result.data || [];
-    } catch (error) {
-      console.warn("Não foi possível assinar as fotos das notas:", error);
+    if (photoNotes.length && supabaseClient && currentSession && navigator.onLine) {
+      try {
+        const result = await supabaseClient.storage
+          .from(NOTAS_BUCKET)
+          .createSignedUrls(photoNotes.map((note) => note.foto_path), 3600);
+        signed = result.data || [];
+      } catch (error) {
+        console.warn("Não foi possível assinar as fotos das notas:", error);
+      }
     }
 
-    elements.notasList.innerHTML = photoNotes
-      .map((note, index) => {
-        const when = new Date(note.capturado_em);
-        const whenLabel = Number.isNaN(when.getTime()) ? "—" : dateFormatter.format(when);
-        const url = signed[index] && signed[index].signedUrl;
-        const thumb = url
-          ? `<img src="${escapeHtml(url)}" alt="Foto da nota" loading="lazy">`
-          : "<span>sem prévia</span>";
-        return `
-          <article class="nota-card">
-            <button type="button" class="nota-thumb" data-nota-foto="${escapeHtml(note.foto_path)}">
-              ${thumb}
-            </button>
-            <div class="nota-body">
-              <span class="nota-when">Foto de ${escapeHtml(whenLabel)}</span>
-              <div class="nota-actions">
-                <button type="button" class="primary-button nota-complete" data-nota-id="${escapeHtml(note.id)}">Completar</button>
-                <button type="button" class="text-button nota-discard" data-nota-id="${escapeHtml(note.id)}">Descartar</button>
-              </div>
-            </div>
-          </article>`;
-      })
-      .join("");
+    const localCards = localPhotoNotes.map((item) => notaCardHtml({
+      when: item.capturado_em,
+      thumb: localThumbUrl(item),
+      localId: item.id,
+      status: navigator.onLine ? "Guardada no aparelho · aguardando envio" : "Guardada no aparelho · envia quando houver internet",
+      statusPending: true
+    }));
+    const remoteCards = photoNotes.map((note, index) => notaCardHtml({
+      id: note.id,
+      when: note.capturado_em,
+      thumb: signed[index] && signed[index].signedUrl,
+      fotoPath: note.foto_path
+    }));
 
+    elements.notasList.innerHTML = [...localCards, ...remoteCards].join("");
     elements.notasList.removeAttribute("aria-busy");
   }
 
-  async function handleNotaCapture(event) {
-    const file = event.target.files && event.target.files[0];
-    event.target.value = "";
+  function flashCaptureSaved() {
+    const button = elements.scanNotaButton;
+    button.classList.add("is-saved");
+    button.textContent = "✓ Foto guardada — tirar outra";
+    window.clearTimeout(capturedFlashTimer);
+    capturedFlashTimer = window.setTimeout(() => {
+      button.classList.remove("is-saved");
+      button.textContent = SCAN_BUTTON_LABEL;
+    }, 2500);
+  }
+
+  async function handleNotaCapture() {
+    const input = elements.notaFileInput;
+    const file = input.files && input.files[0];
     if (!file) return;
 
-    if (!supabaseClient || !currentSession?.user) {
-      showToast("Entre novamente para enviar a foto.");
-      return;
-    }
-    if (!navigator.onLine) {
-      showToast("Sem internet: tire a foto quando a conexão voltar.");
-      return;
-    }
+    const record = {
+      id: randomUuid(),
+      ownerUserId: currentSession?.user?.id || storedSessionUser()?.id || null,
+      capturado_em: new Date().toISOString(),
+      type: file.type || "image/jpeg",
+      data: null
+    };
 
-    setLoading(elements.scanNotaButton, true, "Enviando foto...", SCAN_BUTTON_LABEL);
     try {
-      const blob = await compressImage(file);
-      const path = `${currentSession.user.id}/${Date.now()}-${randomUuid().slice(0, 8)}.jpg`;
-
-      const upload = await supabaseClient.storage
-        .from(NOTAS_BUCKET)
-        .upload(path, blob, { contentType: "image/jpeg", upsert: false });
-      if (upload.error) throw upload.error;
-
-      const inserted = await supabaseClient
-        .from("registros_foto")
-        .insert({ foto_path: path })
-        .select("id,user_id,foto_path,capturado_em,observacao")
-        .single();
-      if (inserted.error) throw inserted.error;
-
-      photoNotes = [inserted.data, ...photoNotes];
-      showToast("Nota guardada. Complete os dados quando puder.");
-      showAppScreen("notas");
+      // ArrayBuffer em vez do File: mais seguro no IndexedDB do Safari.
+      record.data = await file.arrayBuffer();
     } catch (error) {
-      console.error("Erro ao guardar a nota:", error);
-      showToast(`Não foi possível guardar a foto: ${error?.message || "erro desconhecido"}`);
+      console.error("Erro ao ler a foto:", error);
+      showToast("Não foi possível ler a foto. Tente de novo.");
+      return;
     } finally {
-      setLoading(elements.scanNotaButton, false, "Enviando foto...", SCAN_BUTTON_LABEL);
+      input.value = "";
+    }
+
+    let savedOnDevice = true;
+    try {
+      await withPhotoStore("readwrite", (store) => store.put(record));
+    } catch (error) {
+      console.warn("Foto mantida só na memória (IndexedDB indisponível):", error);
+      memoryPhotoNotes.push(record);
+      savedOnDevice = false;
+    }
+
+    await refreshLocalPhotoNotes();
+    updateNotasBadge();
+    if (activeScreen === "notas") void renderNotas();
+    flashCaptureSaved();
+    showToast(savedOnDevice
+      ? "Foto guardada! Complete os dados depois em “Notas pra completar”."
+      : "Foto guardada. Mantenha o app aberto até ela ser enviada.");
+
+    void syncPendingPhotos();
+  }
+
+  async function uploadLocalPhoto(item, userId) {
+    const original = new Blob([item.data], { type: item.type });
+    let blob = original;
+    let contentType = item.type;
+    try {
+      blob = await compressImage(original);
+      contentType = "image/jpeg";
+    } catch (error) {
+      console.warn("Compressão falhou; enviando a foto original:", error);
+    }
+
+    // Caminho e id derivados do id local: repetir o envio é seguro.
+    const extension = PHOTO_MIME_EXTENSIONS[contentType] || "jpg";
+    const path = `${userId}/${item.id}.${extension}`;
+
+    const upload = await supabaseClient.storage
+      .from(NOTAS_BUCKET)
+      .upload(path, blob, { contentType, upsert: false });
+    if (upload.error) {
+      const duplicate = String(upload.error.statusCode) === "409" ||
+        /already exists|duplicate/i.test(String(upload.error.message || ""));
+      if (!duplicate) throw upload.error;
+    }
+
+    const columns = "id,user_id,foto_path,capturado_em,observacao";
+    const inserted = await supabaseClient
+      .from("registros_foto")
+      .insert({ id: item.id, foto_path: path, capturado_em: item.capturado_em })
+      .select(columns)
+      .single();
+    if (!inserted.error) return inserted.data;
+    if (inserted.error.code !== "23505") throw inserted.error;
+
+    const existing = await supabaseClient.from("registros_foto").select(columns).eq("id", item.id).single();
+    if (existing.error) throw existing.error;
+    return existing.data;
+  }
+
+  async function runPhotoSync() {
+    if (!navigator.onLine || !supabaseClient || !currentSession?.user?.id) return 0;
+
+    const userId = currentSession.user.id;
+    const pending = await refreshLocalPhotoNotes();
+    let sent = 0;
+
+    for (const item of pending) {
+      if (item.ownerUserId && item.ownerUserId !== userId) continue;
+      try {
+        const note = await uploadLocalPhoto(item, userId);
+        photoNotes = [note, ...photoNotes.filter((existing) => String(existing.id) !== String(note.id))]
+          .sort((a, b) => String(b.capturado_em).localeCompare(String(a.capturado_em)));
+        await removeLocalPhoto(item.id);
+        sent += 1;
+      } catch (error) {
+        console.warn("Foto da nota não enviada; nova tentativa mais tarde:", error);
+        if (!navigator.onLine) break;
+      }
+    }
+
+    if (sent > 0) {
+      updateNotasBadge();
+      if (activeScreen === "notas") void renderNotas();
+    }
+    return sent;
+  }
+
+  async function syncPendingPhotos() {
+    while (photoSyncPromise) {
+      await photoSyncPromise;
+    }
+    photoSyncPromise = runPhotoSync().finally(() => {
+      photoSyncPromise = null;
+    });
+    return photoSyncPromise;
+  }
+
+  async function loadPhotoNotes() {
+    if (!supabaseClient || !currentSession) return;
+    try {
+      const { data, error } = await supabaseClient
+        .from("registros_foto")
+        .select("id,user_id,foto_path,capturado_em,observacao")
+        .order("capturado_em", { ascending: false });
+      if (error) throw error;
+      photoNotes = data || [];
+      updateNotasBadge();
+      if (activeScreen === "notas") void renderNotas();
+    } catch (error) {
+      console.warn("Não foi possível carregar as notas pra completar:", error);
     }
   }
 
@@ -1597,6 +1833,23 @@
     window.setTimeout(() => elements.gasto.focus({ preventScroll: true }), 0);
   }
 
+  async function startCompletingLocalNota(localId) {
+    if (!navigator.onLine || !currentSession?.user) {
+      showToast("Sem internet: a foto está guardada no aparelho. Complete quando a conexão voltar.");
+      return;
+    }
+
+    showToast("Enviando a foto…");
+    await syncPendingPhotos();
+
+    // O registro remoto usa o mesmo id da foto local.
+    if (photoNotes.some((item) => String(item.id) === String(localId))) {
+      await startCompletingNota(localId);
+    } else {
+      showToast("Ainda não foi possível enviar a foto. Tente de novo em instantes.");
+    }
+  }
+
   function cancelCompletingNota() {
     completingNota = null;
     resetExpenseForm();
@@ -1614,6 +1867,16 @@
     completingNota = null;
     updateNotasBadge();
     void renderNotas();
+  }
+
+  async function discardLocalNota(localId) {
+    const confirmed = await askConfirmation("Descartar esta foto de nota? A imagem será apagada.");
+    if (!confirmed) return;
+
+    await removeLocalPhoto(localId);
+    updateNotasBadge();
+    void renderNotas();
+    showToast("Nota descartada.");
   }
 
   async function discardNota(noteId) {
@@ -1651,12 +1914,23 @@
     const button = event.target.closest("button");
     if (!button) return;
 
+    const localId = button.dataset.localId;
     if (button.classList.contains("nota-complete")) {
-      void startCompletingNota(button.dataset.notaId);
+      if (localId) void startCompletingLocalNota(localId);
+      else void startCompletingNota(button.dataset.notaId);
     } else if (button.classList.contains("nota-discard")) {
-      void discardNota(button.dataset.notaId);
+      if (localId) void discardLocalNota(localId);
+      else void discardNota(button.dataset.notaId);
     } else if (button.classList.contains("nota-thumb")) {
-      void openFotoOverlay(button.dataset.notaFoto);
+      if (button.dataset.localFoto) {
+        const item = localPhotoNotes.find((note) => note.id === button.dataset.localFoto);
+        if (item) {
+          elements.photoOverlayImg.src = localThumbUrl(item);
+          elements.photoOverlay.classList.remove("hidden");
+        }
+      } else {
+        void openFotoOverlay(button.dataset.notaFoto);
+      }
     }
   }
 
@@ -1909,7 +2183,7 @@
   function queueOfflineExpense(payload) {
     const queue = getOfflineQueue();
     queue.push({
-      ownerUserId: currentSession?.user?.id || null,
+      ownerUserId: currentSession?.user?.id || storedSessionUser()?.id || null,
       payload
     });
     saveOfflineQueue(queue);
@@ -2102,12 +2376,15 @@
 
   async function applySession(session) {
     const renderToken = ++authRenderToken;
+    const previousUserId = appliedUserId;
+    const wasShowingApp = !elements.appView.classList.contains("hidden");
     currentSession = session || null;
     const authenticated = Boolean(currentSession?.user);
 
     setAuthenticatedView(authenticated);
 
     if (!authenticated) {
+      appliedUserId = null;
       elements.signedUser.textContent = "";
       elements.sidebarUser.textContent = "";
       elements.recentList.innerHTML =
@@ -2152,11 +2429,24 @@
       : "Usuário conectado";
     elements.sidebarUser.textContent = currentSession.user.email || "Usuário conectado";
 
-    showAppScreen("entry");
+    // Mesmo usuário (evento INITIAL_SESSION duplicado ou TOKEN_REFRESHED):
+    // só retoma os envios pendentes, sem recarregar nem trocar de tela.
+    if (previousUserId === currentSession.user.id) {
+      void flushOfflineQueue();
+      void syncPendingPhotos();
+      return;
+    }
+    appliedUserId = currentSession.user.id;
 
+    // Com a abertura otimista a tela já está visível: não tira a pessoa de onde ela está.
+    if (!wasShowingApp) showAppScreen("entry");
+
+    void syncPendingPhotos();
+    void loadPhotoNotes();
     await flushOfflineQueue();
     if (renderToken !== authRenderToken) return;
     historyNeedsRefresh = true;
+    if (activeScreen !== "entry") void loadRecent();
     void loadGastoSuggestions();
     void loadMonthlyIncome();
   }
@@ -2201,9 +2491,29 @@
     event.preventDefault();
     setMessage(elements.expenseMessage);
 
-    if (!currentSession?.user) {
+    // Na abertura otimista a sessão pode ainda estar sendo confirmada. Sem
+    // internet (ou com rede ruim) o Supabase insiste por até ~30 s, então não
+    // esperamos por ela: com sessão salva no aparelho o gasto vai para a fila.
+    let sessionStillPending = false;
+    if (!currentSession?.user && sessionReadyPromise) {
+      if (navigator.onLine) {
+        setMessage(elements.expenseMessage, "Conectando...");
+        sessionStillPending = !(await Promise.race([
+          sessionReadyPromise.then(() => true),
+          new Promise((resolve) => window.setTimeout(() => resolve(false), 6000))
+        ]));
+        setMessage(elements.expenseMessage);
+      } else {
+        sessionStillPending = true;
+      }
+    }
+
+    const queueOnly = !currentSession?.user &&
+      Boolean(storedSessionUser()) &&
+      (sessionStillPending || sessionNetworkProblem || !navigator.onLine);
+    if (!currentSession?.user && !queueOnly) {
       setMessage(elements.expenseMessage, "Sua sessão expirou. Entre novamente.", "error");
-      await supabaseClient.auth.signOut({ scope: "local" });
+      await supabaseClient?.auth.signOut({ scope: "local" });
       return;
     }
 
@@ -2261,7 +2571,7 @@
     }
 
     const notaToConsume = completingNota;
-    if (notaToConsume && !navigator.onLine) {
+    if (notaToConsume && (!navigator.onLine || queueOnly)) {
       setMessage(
         elements.expenseMessage,
         "Sem internet: complete a nota quando a conexão voltar.",
@@ -2295,7 +2605,7 @@
     };
 
     if (editingExpenseId) {
-      if (!navigator.onLine) {
+      if (!navigator.onLine || queueOnly) {
         setMessage(
           elements.expenseMessage,
           "Sem internet: não é possível atualizar agora. Tente novamente quando a conexão voltar.",
@@ -2342,7 +2652,7 @@
     }
 
     if (isNubank && parcelaTotal > 1) {
-      if (!navigator.onLine) {
+      if (!navigator.onLine || queueOnly) {
         setMessage(
           elements.expenseMessage,
           "Sem internet: compras parceladas precisam de conexão. Tente de novo quando a internet voltar.",
@@ -2415,7 +2725,7 @@
       client_id: randomUuid()
     };
 
-    if (!navigator.onLine) {
+    if (!navigator.onLine || queueOnly) {
       queueOfflineExpense(payload);
       resetExpenseForm();
       setMessage(elements.expenseMessage, "Gasto guardado no aparelho para envio quando a internet voltar.", "success");
@@ -2448,23 +2758,42 @@
     }
   }
 
-  async function removeOldServiceWorkersAndCaches() {
-    try {
-      if ("serviceWorker" in navigator) {
-        const registrations = await navigator.serviceWorker.getRegistrations();
-        await Promise.all(registrations.map((registration) => registration.unregister()));
-      }
+  // Service worker: guarda index.html, CSS, JS e a biblioteca do Supabase no
+  // aparelho. No iPhone o PWA é encerrado com frequência e cada abertura era
+  // uma "partida a frio" baixando tudo de novo; com o cache a tela abre na hora.
+  // Em localhost (Live Server) fica desligado para não atrapalhar o
+  // desenvolvimento — para testar, abra uma vez com ?sw=1 (e ?sw=0 para desligar).
+  function registerServiceWorker() {
+    if (!("serviceWorker" in navigator) || !window.isSecureContext) return;
 
-      if ("caches" in window) {
-        const cacheNames = await caches.keys();
-        await Promise.all(
-          cacheNames
-            .filter((name) => name.startsWith("gastos-da-casa-"))
-            .map((name) => caches.delete(name))
-        );
-      }
-    } catch (error) {
-      console.warn("Não foi possível limpar o cache antigo:", error);
+    const devHost = ["localhost", "127.0.0.1", "[::1]"].includes(window.location.hostname);
+    let devEnabled = false;
+    try {
+      const flag = new URLSearchParams(window.location.search).get("sw");
+      if (flag === "1") localStorage.setItem("gastos-da-casa-sw-dev", "1");
+      if (flag === "0") localStorage.removeItem("gastos-da-casa-sw-dev");
+      devEnabled = localStorage.getItem("gastos-da-casa-sw-dev") === "1";
+    } catch {
+      devEnabled = false;
+    }
+
+    if (devHost && !devEnabled) {
+      void navigator.serviceWorker.getRegistrations()
+        .then((registrations) => Promise.all(registrations.map((item) => item.unregister())))
+        .catch(() => {});
+      return;
+    }
+
+    const register = () => {
+      navigator.serviceWorker
+        .register(`sw.js?v=${encodeURIComponent(APP_VERSION)}`)
+        .catch((error) => console.warn("Service worker não registrado:", error));
+    };
+
+    if (document.readyState === "complete") {
+      window.setTimeout(register, 0);
+    } else {
+      window.addEventListener("load", register, { once: true });
     }
   }
 
@@ -2492,7 +2821,17 @@
 
   async function init() {
     initializeTheme();
-    await removeOldServiceWorkersAndCaches();
+
+    // Abertura otimista: com sessão salva, a tela de lançamento (e o botão de
+    // foto) aparece já, sem esperar o Supabase confirmar a sessão pela rede.
+    const bootUser = storedSessionUser();
+    delete document.documentElement.dataset.boot;
+    if (bootUser) {
+      setAuthenticatedView(true);
+      elements.signedUser.textContent = bootUser.email ? `Conectado como ${bootUser.email}` : "Usuário conectado";
+      elements.sidebarUser.textContent = bootUser.email || "Usuário conectado";
+      syncActiveNav();
+    }
 
     elements.agora.addEventListener("change", toggleDateField);
     elements.agora.addEventListener("change", updateFaturaField);
@@ -2550,8 +2889,19 @@
     elements.cardPaymentSave.addEventListener("click", () => void savePayment());
     elements.cardPaymentValue.addEventListener("blur", formatMoneyInput);
     elements.cardPaymentsList.addEventListener("click", handleCardPaymentsClick);
-    elements.scanNotaButton.addEventListener("click", () => elements.notaFileInput.click());
-    elements.notaFileInput.addEventListener("change", handleNotaCapture);
+    elements.scanNotaButton.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        elements.notaFileInput.click();
+      }
+    });
+    elements.notaFileInput.addEventListener("change", () => void handleNotaCapture());
+    // Foto tirada antes de o app.js terminar de carregar (o <label> já funciona).
+    if (elements.notaFileInput.files?.length) void handleNotaCapture();
+    void refreshLocalPhotoNotes().then(() => {
+      updateNotasBadge();
+      if (activeScreen === "notas") void renderNotas();
+    });
     elements.openNotasButton.addEventListener("click", () => showAppScreen("notas"));
     elements.backNotasButton.addEventListener("click", () => showAppScreen("entry"));
     elements.notasList.addEventListener("click", handleNotasListClick);
@@ -2599,7 +2949,16 @@
 
     window.addEventListener("online", () => {
       void flushOfflineQueue();
+      void syncPendingPhotos();
     });
+    // No iPhone o PWA volta do segundo plano sem recarregar: retoma os envios.
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState !== "visible") return;
+      void flushOfflineQueue();
+      void syncPendingPhotos();
+    });
+
+    registerServiceWorker();
 
     toggleInstallmentsField();
     toggleDateField();
@@ -2622,6 +2981,9 @@
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: true
+        // Sem opção "lock": desde a 2.107 o cliente não usa mais navigator.locks
+        // (que podia segurar a recuperação da sessão por até 5 s no iPhone).
+        // Por isso a versão do supabase-js fica fixa no index.html.
       }
     });
 
@@ -2649,12 +3011,30 @@
       }, 0);
     });
 
+    sessionReadyPromise = recoverSession(Boolean(bootUser));
+    await sessionReadyPromise;
+  }
+
+  async function recoverSession(bootedOptimistically) {
     try {
       const { data, error } = await supabaseClient.auth.getSession();
       if (error) throw error;
+      sessionNetworkProblem = false;
       await applySession(data?.session || null);
     } catch (error) {
       console.error("Erro ao recuperar sessão:", error);
+
+      // Sem internet ao abrir: mantém a tela de lançamento para fotos e gastos
+      // offline, e tenta de novo quando a conexão voltar.
+      if (bootedOptimistically && isNetworkError(error)) {
+        sessionNetworkProblem = true;
+        showToast("Sem internet: fotos e gastos ficam guardados no aparelho.");
+        window.addEventListener("online", () => {
+          sessionReadyPromise = recoverSession(true);
+        }, { once: true });
+        return;
+      }
+
       await applySession(null);
       setMessage(
         elements.loginMessage,
