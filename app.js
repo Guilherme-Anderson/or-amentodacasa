@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const APP_VERSION = "2.12.0";
+  const APP_VERSION = "2.13.0";
   const OFFLINE_QUEUE_KEY = "gastos-da-casa-offline-v2";
   const THEME_STORAGE_KEY = "gastos-da-casa-theme";
   const LAST_FORMA_KEY = "gastos-da-casa-last-forma";
@@ -76,6 +76,8 @@
     navItems: [...document.querySelectorAll("[data-nav]")],
     sidebarUser: document.querySelector("#sidebar-user"),
     sidebarNotasCount: document.querySelector("#sidebar-notas-count"),
+    bottomNavMore: document.querySelector(".bottom-nav-more"),
+    captureShortcuts: [...document.querySelectorAll("[data-capture-shortcut]")],
     backEntryButton: document.querySelector("#back-entry-button"),
     backDashboardButton: document.querySelector("#back-dashboard-button"),
     backReportButton: document.querySelector("#back-report-button"),
@@ -565,6 +567,33 @@
         item.removeAttribute("aria-current");
       }
     });
+
+    // Relatório, Cartão e Notas ficam no "Mais" da barra inferior do celular.
+    elements.bottomNavMore?.classList.toggle(
+      "is-active",
+      ["report", "card", "notas"].includes(activeScreen)
+    );
+  }
+
+  // Teclado do celular aberto: a área visível encolhe bem mais que a janela. Nesse caso a
+  // barra inferior some (CSS .keyboard-open). Foco sozinho não basta: a tela de lançamento
+  // foca o campo "Gasto" ao abrir e no iPhone isso não abre o teclado. O zoom com os dedos
+  // também encolhe a área visível, por isso a conta usa a escala.
+  function watchVirtualKeyboard() {
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+    const update = () => {
+      const hiddenByKeyboard = window.innerHeight - viewport.height * viewport.scale;
+      document.documentElement.classList.toggle("keyboard-open", hiddenByKeyboard > 150);
+    };
+    viewport.addEventListener("resize", update);
+    update();
+  }
+
+  function visibleMenuItems() {
+    return [...elements.appMenu.querySelectorAll(".app-menu-item")].filter(
+      (item) => item.offsetParent !== null
+    );
   }
 
   function closeAppMenu({ restoreFocus = false } = {}) {
@@ -577,9 +606,19 @@
   }
 
   function openAppMenu(anchorButton) {
-    const rect = anchorButton.getBoundingClientRect();
-    elements.appMenu.style.top = `${Math.round(rect.bottom + 8)}px`;
-    elements.appMenu.style.right = `${Math.round(Math.max(12, window.innerWidth - rect.right))}px`;
+    // Aberto pelo "Mais" da barra inferior, o menu vira um painel que sobe de baixo
+    // (posição pelo CSS); aberto pelo ☰ do cabeçalho, fica ancorado no botão.
+    const asSheet = Boolean(anchorButton.closest(".bottom-nav"));
+    elements.appMenu.classList.toggle("is-sheet", asSheet);
+    elements.appMenuBackdrop.classList.toggle("is-sheet", asSheet);
+    if (asSheet) {
+      elements.appMenu.style.top = "";
+      elements.appMenu.style.right = "";
+    } else {
+      const rect = anchorButton.getBoundingClientRect();
+      elements.appMenu.style.top = `${Math.round(rect.bottom + 8)}px`;
+      elements.appMenu.style.right = `${Math.round(Math.max(12, window.innerWidth - rect.right))}px`;
+    }
 
     syncActiveNav();
     menuAnchor = anchorButton;
@@ -588,15 +627,14 @@
     elements.appMenu.classList.remove("hidden");
     elements.appMenuBackdrop.classList.remove("hidden");
 
-    const firstItem =
-      elements.appMenu.querySelector(".app-menu-item.is-active") ||
-      elements.appMenu.querySelector(".app-menu-item");
+    const items = visibleMenuItems();
+    const firstItem = items.find((item) => item.classList.contains("is-active")) || items[0];
     firstItem?.focus({ preventScroll: true });
   }
 
   // Setas, Home e End percorrem os itens do menu aberto (teclado no desktop).
   function handleAppMenuKeydown(event) {
-    const items = [...elements.appMenu.querySelectorAll(".app-menu-item")];
+    const items = visibleMenuItems();
     const index = items.indexOf(document.activeElement);
     let next = null;
 
@@ -759,7 +797,7 @@
           : "";
 
         const fotoButton = item.foto_path
-          ? `<button type="button" class="expense-action-button" data-foto="${escapeHtml(item.foto_path)}">
+          ? `<button type="button" class="expense-action-button" data-foto="${escapeHtml(item.foto_path)}" aria-label="Ver foto da nota">
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
                   <span>Nota</span>
                 </button>`
@@ -779,11 +817,11 @@
               <span class="expense-value">${moneyFormatter.format(Number(item.valor))}</span>
               <div class="expense-actions">
                 ${fotoButton}
-                <button type="button" class="expense-action-button" data-action="edit" data-id="${escapeHtml(item.id)}">
+                <button type="button" class="expense-action-button" data-action="edit" data-id="${escapeHtml(item.id)}" aria-label="Editar ${escapeHtml(item.gasto)}">
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
                   <span>Editar</span>
                 </button>
-                <button type="button" class="expense-action-button danger" data-action="delete" data-id="${escapeHtml(item.id)}">
+                <button type="button" class="expense-action-button danger" data-action="delete" data-id="${escapeHtml(item.id)}" aria-label="Excluir ${escapeHtml(item.gasto)}">
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path></svg>
                   <span>Excluir</span>
                 </button>
@@ -1227,7 +1265,8 @@
                   <strong>${moneyFormatter.format(Number(payment.valor || 0))}</strong>
                   <span>${escapeHtml(dateLabel)}${note}</span>
                 </div>
-                <button type="button" class="expense-action-button danger" data-payment-id="${escapeHtml(payment.id)}">
+                <button type="button" class="expense-action-button danger" data-payment-id="${escapeHtml(payment.id)}" aria-label="Excluir pagamento">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path></svg>
                   <span>Excluir</span>
                 </button>
               </div>`;
@@ -1657,9 +1696,11 @@
     const button = elements.scanNotaButton;
     button.classList.add("is-saved");
     button.textContent = "✓ Foto guardada — tirar outra";
+    elements.captureShortcuts.forEach((shortcut) => shortcut.classList.add("is-saved"));
     window.clearTimeout(capturedFlashTimer);
     capturedFlashTimer = window.setTimeout(() => {
       button.classList.remove("is-saved");
+      elements.captureShortcuts.forEach((shortcut) => shortcut.classList.remove("is-saved"));
       button.textContent = SCAN_BUTTON_LABEL;
     }, 2500);
   }
@@ -2889,11 +2930,13 @@
     elements.cardPaymentSave.addEventListener("click", () => void savePayment());
     elements.cardPaymentValue.addEventListener("blur", formatMoneyInput);
     elements.cardPaymentsList.addEventListener("click", handleCardPaymentsClick);
-    elements.scanNotaButton.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        elements.notaFileInput.click();
-      }
+    [elements.scanNotaButton, ...elements.captureShortcuts].forEach((label) => {
+      label.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          elements.notaFileInput.click();
+        }
+      });
     });
     elements.notaFileInput.addEventListener("change", () => void handleNotaCapture());
     // Foto tirada antes de o app.js terminar de carregar (o <label> já funciona).
@@ -2946,6 +2989,7 @@
       if (event.key === "Escape") closeAppMenu({ restoreFocus: true });
     });
     window.addEventListener("resize", closeAppMenu);
+    watchVirtualKeyboard();
 
     window.addEventListener("online", () => {
       void flushOfflineQueue();

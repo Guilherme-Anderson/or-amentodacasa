@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#f4f7fb" />
   <meta name="description" content="Registro rápido dos gastos da casa." />
-  <link rel="icon" href="icons/icon-192.png?v=2.12.0" />
-  <link rel="apple-touch-icon" href="icons/icon-192.png?v=2.12.0" />
+  <link rel="icon" href="icons/icon-192.png?v=2.13.0" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png?v=2.13.0" />
   <link rel="manifest" href="manifest.json" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -40,10 +40,10 @@
     })();
   </script>
 
-  <link rel="stylesheet" href="styles.css?v=2.12.0" />
+  <link rel="stylesheet" href="styles.css?v=2.13.0" />
   <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js"></script>
-  <script defer src="config.js?v=2.12.0"></script>
-  <script defer src="app.js?v=2.12.0"></script>
+  <script defer src="config.js?v=2.13.0"></script>
+  <script defer src="app.js?v=2.13.0"></script>
   <title>Gastos da Casa</title>
 </head>
 <body>
@@ -112,6 +112,10 @@
     </section>
 
     <section id="app-view" class="app-view hidden" aria-live="polite">
+      <!-- Input da câmera fora da área de lançamento: os <label for="nota-file"> (botão grande e
+           atalho da barra inferior) abrem a câmera com um toque em qualquer tela, mesmo antes de o app.js carregar. -->
+      <input id="nota-file" class="capture-input" type="file" accept="image/*" capture="environment" />
+
       <!-- Navegação lateral fixa: só aparece em telas largas (desktop) -->
       <aside class="app-sidebar" aria-label="Navegação principal">
         <div class="sidebar-brand">
@@ -197,7 +201,6 @@
 
         <div id="capture-row" class="capture-row">
           <!-- Label nativo: abre a câmera com um toque, mesmo antes de o app.js carregar. -->
-          <input id="nota-file" class="capture-input" type="file" accept="image/*" capture="environment" />
           <label id="scan-nota-button" for="nota-file" class="capture-button" role="button" tabindex="0">📷 Tirar foto da nota</label>
           <button id="open-notas-button" type="button" class="notas-link">
             <span class="notas-badge" id="notas-pending-count">0</span>
@@ -775,6 +778,32 @@
           </div>
         </div>
       </section>
+
+      <!-- Barra inferior fixa: celular e tablet (no desktop a barra lateral faz esse papel) -->
+      <nav class="bottom-nav" aria-label="Navegação principal">
+        <button type="button" class="bottom-nav-item" data-nav="entry">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v8M8 12h8"></path></svg>
+          <span>Novo</span>
+        </button>
+        <button type="button" class="bottom-nav-item" data-nav="history">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"></path></svg>
+          <span>Lançamentos</span>
+        </button>
+        <label for="nota-file" class="bottom-nav-item bottom-nav-camera" data-capture-shortcut role="button" tabindex="0" aria-label="Tirar foto da nota">
+          <span class="bottom-nav-camera-icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+          </span>
+          <span>Foto</span>
+        </label>
+        <button type="button" class="bottom-nav-item" data-nav="dashboard">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.2 15.9A10 10 0 1 1 8 2.8"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>
+          <span>Painel</span>
+        </button>
+        <button type="button" class="bottom-nav-item bottom-nav-more" data-menu-toggle aria-label="Mais opções" aria-haspopup="true">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18"></path></svg>
+          <span>Mais</span>
+        </button>
+      </nav>
     </section>
   </main>
 
