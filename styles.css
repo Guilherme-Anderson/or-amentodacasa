@@ -1659,6 +1659,9 @@ html[data-theme="dark"] .theme-icon-sun { display: block; }
 }
 
 .capture-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: 1 1 auto;
   min-height: 44px;
   padding: 0 14px;
@@ -1810,6 +1813,47 @@ html[data-theme="dark"] .theme-icon-sun { display: block; }
   .capture-row { flex-wrap: wrap; }
   .notas-link { width: 100%; justify-content: center; }
 }
+
+/* Versão 2.11 — abertura rápida e foto em um toque */
+html[data-boot="app"] #login-view { display: none !important; }
+html[data-boot="app"] #app-view.hidden { display: block !important; }
+
+/* O input fica fora da tela (não display:none) para o <label> abrir a câmera
+   de forma confiável no Safari do iPhone. */
+.capture-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.capture-button {
+  min-height: 54px;
+  font-size: 1rem;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: background-color .2s ease, color .2s ease, transform .1s ease;
+}
+
+.capture-button:active { transform: scale(.98); }
+
+.capture-button.is-saved {
+  border-style: solid;
+  background: var(--primary);
+  color: #fff;
+}
+
+.nota-status {
+  font-size: .74rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.nota-status.is-pending { color: var(--primary); }
 
 @media (min-width: 900px) {
   .capture-row,

@@ -5,12 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#f4f7fb" />
   <meta name="description" content="Registro rápido dos gastos da casa." />
-  <link rel="icon" href="icons/icon-192.png?v=2.10.0" />
-  <link rel="apple-touch-icon" href="icons/icon-192.png?v=2.10.0" />
+  <link rel="icon" href="icons/icon-192.png?v=2.11.0" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png?v=2.11.0" />
   <link rel="manifest" href="manifest.json" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="Gastos da Casa" />
+
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+  <link rel="preconnect" href="https://xbvqicsrwtilcfamymjl.supabase.co" crossorigin />
 
   <script>
     (() => {
@@ -20,10 +23,27 @@
       } catch {
         document.documentElement.dataset.theme = "light";
       }
+
+      // Se já existe uma sessão salva, a tela de lançamento aparece no primeiro
+      // quadro, sem esperar o Supabase. O app.js confirma (ou desfaz) depois.
+      try {
+        for (let index = 0; index < localStorage.length; index += 1) {
+          const key = localStorage.key(index) || "";
+          if (/^sb-.+-auth-token$/.test(key) && localStorage.getItem(key)) {
+            document.documentElement.dataset.boot = "app";
+            break;
+          }
+        }
+      } catch {
+        // Sem acesso ao armazenamento: segue pelo caminho normal de login.
+      }
     })();
   </script>
 
-  <link rel="stylesheet" href="styles.css?v=2.10.0" />
+  <link rel="stylesheet" href="styles.css?v=2.11.0" />
+  <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js"></script>
+  <script defer src="config.js?v=2.11.0"></script>
+  <script defer src="app.js?v=2.11.0"></script>
   <title>Gastos da Casa</title>
 </head>
 <body>
@@ -124,8 +144,9 @@
         </div>
 
         <div id="capture-row" class="capture-row">
-          <input id="nota-file" type="file" accept="image/*" capture="environment" hidden />
-          <button id="scan-nota-button" type="button" class="capture-button">📷 Tirar foto da nota</button>
+          <!-- Label nativo: abre a câmera com um toque, mesmo antes de o app.js carregar. -->
+          <input id="nota-file" class="capture-input" type="file" accept="image/*" capture="environment" />
+          <label id="scan-nota-button" for="nota-file" class="capture-button" role="button" tabindex="0">📷 Tirar foto da nota</label>
           <button id="open-notas-button" type="button" class="notas-link">
             <span class="notas-badge" id="notas-pending-count">0</span>
             <span class="notas-btn-label">Notas pra completar</span>
@@ -738,8 +759,5 @@
     <button type="button" class="app-menu-item danger logout-button">Sair</button>
   </nav>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="config.js?v=2.10.0"></script>
-  <script src="app.js?v=2.10.0"></script>
 </body>
 </html>
