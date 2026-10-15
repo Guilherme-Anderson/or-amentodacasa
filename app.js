@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const APP_VERSION = "2.10.0";
+  const APP_VERSION = "2.11.0";
   const OFFLINE_QUEUE_KEY = "gastos-da-casa-offline-v2";
   const THEME_STORAGE_KEY = "gastos-da-casa-theme";
   const LAST_FORMA_KEY = "gastos-da-casa-last-forma";
@@ -70,6 +70,9 @@
     appMenuBackdrop: document.querySelector("#app-menu-backdrop"),
     menuThemeItem: document.querySelector("#menu-theme-item"),
     menuNotasCount: document.querySelector("#menu-notas-count"),
+    navItems: [...document.querySelectorAll("[data-nav]")],
+    sidebarUser: document.querySelector("#sidebar-user"),
+    sidebarNotasCount: document.querySelector("#sidebar-notas-count"),
     backEntryButton: document.querySelector("#back-entry-button"),
     backDashboardButton: document.querySelector("#back-dashboard-button"),
     backReportButton: document.querySelector("#back-report-button"),
@@ -186,6 +189,7 @@
   let toastTimer = null;
   let authRenderToken = 0;
   let activeScreen = "entry";
+  let menuAnchor = null;
   let historyNeedsRefresh = true;
   let allExpenses = [];
   let membersById = new Map();
@@ -516,6 +520,7 @@
     elements.reportScreen.classList.toggle("hidden", target !== "report");
     elements.cardScreen.classList.toggle("hidden", target !== "card");
     elements.notasScreen.classList.toggle("hidden", target !== "notas");
+    syncActiveNav();
 
     if (dataScreens.includes(target)) {
       if (historyNeedsRefresh) {
@@ -537,9 +542,26 @@
     window.setTimeout(() => elements.gasto.focus({ preventScroll: true }), 0);
   }
 
-  function closeAppMenu() {
+  // Marca a tela atual no menu do celular e na barra lateral do desktop.
+  function syncActiveNav() {
+    elements.navItems.forEach((item) => {
+      const isActive = item.dataset.nav === activeScreen;
+      item.classList.toggle("is-active", isActive);
+      if (isActive) {
+        item.setAttribute("aria-current", "page");
+      } else {
+        item.removeAttribute("aria-current");
+      }
+    });
+  }
+
+  function closeAppMenu({ restoreFocus = false } = {}) {
+    if (elements.appMenu.classList.contains("hidden")) return;
     elements.appMenu.classList.add("hidden");
     elements.appMenuBackdrop.classList.add("hidden");
+    elements.menuButtons.forEach((button) => button.setAttribute("aria-expanded", "false"));
+    if (restoreFocus) menuAnchor?.focus();
+    menuAnchor = null;
   }
 
   function openAppMenu(anchorButton) {
@@ -547,12 +569,35 @@
     elements.appMenu.style.top = `${Math.round(rect.bottom + 8)}px`;
     elements.appMenu.style.right = `${Math.round(Math.max(12, window.innerWidth - rect.right))}px`;
 
-    elements.appMenu.querySelectorAll("[data-nav]").forEach((item) => {
-      item.classList.toggle("is-active", item.dataset.nav === activeScreen);
-    });
+    syncActiveNav();
+    menuAnchor = anchorButton;
+    anchorButton.setAttribute("aria-expanded", "true");
 
     elements.appMenu.classList.remove("hidden");
     elements.appMenuBackdrop.classList.remove("hidden");
+
+    const firstItem =
+      elements.appMenu.querySelector(".app-menu-item.is-active") ||
+      elements.appMenu.querySelector(".app-menu-item");
+    firstItem?.focus({ preventScroll: true });
+  }
+
+  // Setas, Home e End percorrem os itens do menu aberto (teclado no desktop).
+  function handleAppMenuKeydown(event) {
+    const items = [...elements.appMenu.querySelectorAll(".app-menu-item")];
+    const index = items.indexOf(document.activeElement);
+    let next = null;
+
+    if (event.key === "ArrowDown") next = items[(index + 1) % items.length];
+    else if (event.key === "ArrowUp") next = items[(index - 1 + items.length) % items.length];
+    else if (event.key === "Home") next = items[0];
+    else if (event.key === "End") next = items[items.length - 1];
+    else if (event.key === "Tab") closeAppMenu();
+
+    if (next) {
+      event.preventDefault();
+      next.focus();
+    }
   }
 
   function toggleAppMenu(anchorButton) {
@@ -1420,6 +1465,10 @@
       elements.menuNotasCount.textContent = String(count);
       elements.menuNotasCount.hidden = count === 0;
     }
+    if (elements.sidebarNotasCount) {
+      elements.sidebarNotasCount.textContent = String(count);
+      elements.sidebarNotasCount.hidden = count === 0;
+    }
     elements.menuButtons.forEach((button) => {
       button.classList.toggle("has-pending", count > 0);
     });
@@ -2060,6 +2109,7 @@
 
     if (!authenticated) {
       elements.signedUser.textContent = "";
+      elements.sidebarUser.textContent = "";
       elements.recentList.innerHTML =
         '<p class="empty-state">Nenhum lançamento carregado.</p>';
       allExpenses = [];
@@ -2100,6 +2150,7 @@
     elements.signedUser.textContent = currentSession.user.email
       ? `Conectado como ${currentSession.user.email}`
       : "Usuário conectado";
+    elements.sidebarUser.textContent = currentSession.user.email || "Usuário conectado";
 
     showAppScreen("entry");
 
@@ -2520,13 +2571,16 @@
     });
 
     elements.menuButtons.forEach((button) => {
+      button.setAttribute("aria-expanded", "false");
+      button.setAttribute("aria-controls", "app-menu");
       button.addEventListener("click", (event) => {
         event.stopPropagation();
         toggleAppMenu(button);
       });
     });
     elements.appMenuBackdrop.addEventListener("click", closeAppMenu);
-    elements.appMenu.querySelectorAll("[data-nav]").forEach((item) => {
+    elements.appMenu.addEventListener("keydown", handleAppMenuKeydown);
+    elements.navItems.forEach((item) => {
       item.addEventListener("click", () => {
         const target = item.dataset.nav;
         closeAppMenu();
@@ -2539,7 +2593,7 @@
       closeAppMenu();
     });
     document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") closeAppMenu();
+      if (event.key === "Escape") closeAppMenu({ restoreFocus: true });
     });
     window.addEventListener("resize", closeAppMenu);
 

@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#f4f7fb" />
   <meta name="description" content="Registro rápido dos gastos da casa." />
-  <link rel="icon" href="icons/icon-192.png?v=2.10.0" />
-  <link rel="apple-touch-icon" href="icons/icon-192.png?v=2.10.0" />
+  <link rel="icon" href="icons/icon-192.png?v=2.11.0" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png?v=2.11.0" />
   <link rel="manifest" href="manifest.json" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -23,7 +23,7 @@
     })();
   </script>
 
-  <link rel="stylesheet" href="styles.css?v=2.10.0" />
+  <link rel="stylesheet" href="styles.css?v=2.11.0" />
   <title>Gastos da Casa</title>
 </head>
 <body>
@@ -92,6 +92,58 @@
     </section>
 
     <section id="app-view" class="app-view hidden" aria-live="polite">
+      <!-- Navegação lateral fixa: só aparece em telas largas (desktop) -->
+      <aside class="app-sidebar" aria-label="Navegação principal">
+        <div class="sidebar-brand">
+          <div class="brand-mark" aria-hidden="true">$TG</div>
+          <div class="sidebar-brand-text">
+            <strong>Gastos da Casa</strong>
+            <small id="sidebar-user"></small>
+          </div>
+        </div>
+
+        <nav class="sidebar-nav" aria-label="Telas do aplicativo">
+          <button type="button" class="sidebar-item sidebar-item-primary" data-nav="entry">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v8M8 12h8"></path></svg>
+            <span>Novo gasto</span>
+          </button>
+          <button type="button" class="sidebar-item" data-nav="history">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"></path></svg>
+            <span>Lançamentos</span>
+          </button>
+          <button type="button" class="sidebar-item" data-nav="dashboard">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.2 15.9A10 10 0 1 1 8 2.8"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>
+            <span>Painel</span>
+          </button>
+          <button type="button" class="sidebar-item" data-nav="report">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6a1 1 0 0 1 1 1v2H8V4a1 1 0 0 1 1-1z"></path><path d="M8 5H6a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"></path><path d="m9 14 2 2 4-4"></path></svg>
+            <span>Relatório</span>
+          </button>
+          <button type="button" class="sidebar-item" data-nav="card">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"></rect><path d="M2 10h20M6 15h4"></path></svg>
+            <span>Cartão</span>
+          </button>
+          <button type="button" class="sidebar-item" data-nav="notas">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+            <span>Notas pra completar</span>
+            <span class="app-menu-badge" id="sidebar-notas-count" hidden>0</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <button type="button" class="sidebar-item" data-theme-toggle>
+            <svg class="theme-icon theme-icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.7A8.5 8.5 0 1 1 11.3 3a6.6 6.6 0 0 0 9.7 9.7Z"></path></svg>
+            <svg class="theme-icon theme-icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.41M17.66 6.34l1.41-1.41"></path></svg>
+            <span class="only-light">Modo escuro</span>
+            <span class="only-dark">Modo claro</span>
+          </button>
+          <button type="button" class="sidebar-item danger logout-button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><path d="m16 17 5-5-5-5M21 12H9"></path></svg>
+            <span>Sair</span>
+          </button>
+        </div>
+      </aside>
+
       <section id="entry-screen" class="app-screen entry-screen" aria-labelledby="page-title">
         <header class="app-header entry-header">
           <div class="header-kicker-row">
@@ -353,7 +405,7 @@
           </div>
         </header>
 
-        <div class="dashboard-content card">
+        <div class="dashboard-content dashboard-overview card">
           <div class="dashboard-filters-row">
             <label class="filter-field">
               <span>Mês</span>
@@ -739,7 +791,7 @@
   </nav>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="config.js?v=2.10.0"></script>
-  <script src="app.js?v=2.10.0"></script>
+  <script src="config.js?v=2.11.0"></script>
+  <script src="app.js?v=2.11.0"></script>
 </body>
 </html>

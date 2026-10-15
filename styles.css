@@ -1919,3 +1919,333 @@ html[data-theme="dark"] .theme-icon-sun { display: block; }
 }
 
 .app-menu-badge[hidden] { display: none; }
+
+.app-menu-item:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--primary);
+}
+
+/* Versão 2.11 — desktop: navegação lateral fixa e telas revisadas */
+.app-sidebar { display: none; }
+.only-dark { display: none; }
+html[data-theme="dark"] .only-dark { display: inline; }
+html[data-theme="dark"] .only-light { display: none; }
+
+@media (min-width: 1024px) {
+  .page-shell {
+    width: min(100%, 1480px);
+    padding: 24px 32px 32px;
+  }
+
+  .auth-card { margin-top: 10vh; }
+
+  /* Barra lateral + área de conteúdo */
+  .app-view {
+    display: grid;
+    grid-template-columns: 260px minmax(0, 1fr);
+    column-gap: 40px;
+    align-items: start;
+    min-height: 0;
+  }
+
+  .app-view > .app-screen {
+    grid-column: 2;
+    grid-row: 1;
+    width: 100%;
+    max-width: 1120px;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .app-sidebar {
+    position: sticky;
+    top: 24px;
+    grid-column: 1;
+    grid-row: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    height: calc(100dvh - 48px);
+    min-height: 460px;
+    padding: 18px 12px 12px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--surface);
+    box-shadow: var(--shadow);
+  }
+
+  .sidebar-brand {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 0 6px;
+  }
+
+  .sidebar-brand .brand-mark {
+    width: 42px;
+    height: 42px;
+    flex-shrink: 0;
+    border-radius: 13px;
+    font-size: .78rem;
+  }
+
+  .sidebar-brand-text {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .sidebar-brand-text strong {
+    font-size: 1rem;
+    letter-spacing: -0.02em;
+  }
+
+  .sidebar-brand-text small {
+    overflow: hidden;
+    color: var(--muted);
+    font-size: .74rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sidebar-nav,
+  .sidebar-footer {
+    display: grid;
+    gap: 2px;
+  }
+
+  .sidebar-footer {
+    margin-top: auto;
+    padding-top: 10px;
+    border-top: 1px solid var(--line);
+  }
+
+  .sidebar-item {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    width: 100%;
+    min-height: 42px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: 11px;
+    background: transparent;
+    color: var(--text);
+    font-size: .88rem;
+    font-weight: 700;
+    text-align: left;
+    white-space: nowrap;
+    transition: background .15s ease, color .15s ease;
+  }
+
+  .sidebar-item > span:not(.app-menu-badge) {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .sidebar-item svg {
+    width: 19px;
+    height: 19px;
+    flex-shrink: 0;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.9;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .sidebar-item:hover { background: var(--surface-soft); }
+  .sidebar-item:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus-ring); }
+  .sidebar-item.is-active { background: var(--primary-soft); color: var(--primary); }
+  .sidebar-item.danger { color: var(--danger); }
+  .sidebar-item .app-menu-badge { margin-left: auto; }
+
+  .sidebar-item-primary {
+    margin-bottom: 10px;
+    justify-content: center;
+    min-height: 46px;
+    background: var(--primary);
+    color: #fff;
+    font-weight: 800;
+  }
+
+  .sidebar-item-primary:hover,
+  .sidebar-item-primary.is-active {
+    background: var(--primary-hover);
+    color: #fff;
+  }
+
+  .sidebar-item-primary.is-active { box-shadow: 0 0 0 3px var(--focus-ring); }
+
+  /* No desktop a barra lateral substitui o menu ☰ e os botões "voltar" */
+  .menu-button,
+  .history-toolbar,
+  .app-menu,
+  .app-menu-backdrop,
+  .signed-user { display: none !important; }
+
+  /* Cabeçalhos das telas mais compactos e alinhados */
+  .app-header { margin: 4px 0 18px; }
+  .entry-screen .app-header { margin-bottom: 18px; }
+  .header-kicker-row { min-height: 0; margin-bottom: 4px; }
+  .app-header h1,
+  .history-title-row h1 { font-size: 2.3rem; }
+  .history-title-row { align-items: flex-end; }
+
+  .refresh-button {
+    min-height: 38px;
+    padding: 0 16px;
+    font-size: .86rem;
+  }
+
+  .refresh-button:hover { background: var(--primary); color: #fff; }
+
+  /* Novo gasto: tudo alinhado à esquerda, na mesma largura do formulário */
+  .expense-form,
+  .edit-banner,
+  .capture-row,
+  .nota-banner {
+    width: 100%;
+    max-width: 820px;
+    margin-inline: 0;
+  }
+
+  .capture-row { margin-bottom: 14px; }
+  .expense-form { padding: 24px 28px; }
+
+  /* Nubank: parcelas e fatura na mesma linha, logo abaixo de valor/forma */
+  .form-fields > * { order: 10; }
+  .form-fields > .field:nth-child(-n+3) { order: 1; }
+  #installments-field,
+  #fatura-field { order: 2; grid-column: auto; }
+  .capture-button:hover { background: var(--primary); color: #fff; border-style: solid; }
+
+  /* Lançamentos: lista vira uma tabela de uma coluna, fácil de ler com mouse */
+  .category-summary { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+
+  .recent-list {
+    grid-template-columns: 1fr;
+    gap: 0;
+    border: 1px solid var(--line);
+    border-radius: 13px;
+    overflow: hidden;
+  }
+
+  .recent-list > .empty-state { margin: 0; border: 0; border-radius: 0; }
+
+  .expense-item {
+    align-items: center;
+    gap: 18px;
+    padding: 11px 14px;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    border-radius: 0;
+    background: var(--surface);
+    transition: background .15s ease;
+  }
+
+  .expense-item:last-child { border-bottom: 0; }
+  .expense-item:hover { background: var(--surface-soft); }
+
+  .expense-side {
+    flex-direction: row;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .expense-value { min-width: 108px; text-align: right; }
+  .expense-action-button:hover { border-color: var(--primary); color: var(--primary); }
+  .expense-action-button.danger:hover { background: var(--danger-soft); color: var(--danger); border-color: var(--danger); }
+
+  /* Relatório: grupos em colunas sem buracos entre eles */
+  .report-search-field { max-width: 520px; }
+
+  /* Cartão: ciclo e parcelas futuras lado a lado; fatura e compras na largura toda */
+  #card-screen {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 14px;
+    align-content: start;
+  }
+
+  #card-screen > .app-header { grid-column: 1 / -1; grid-row: 1; }
+  #card-screen > .card-config { grid-column: 1; grid-row: 2; }
+  #card-screen > .card-future { grid-column: 2; grid-row: 2; display: flex; align-items: center; }
+  #card-screen > .card-invoice { grid-column: 1 / -1; grid-row: 3; }
+  #card-screen > .card-purchases { grid-column: 1 / -1; grid-row: 4; }
+
+  .card-future-row { width: 100%; }
+  .card-nav-button { width: 40px; height: 40px; }
+
+  /* Notas: cartões em grade */
+  .notas-list { grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); }
+
+  /* Modais um pouco mais largos com mouse */
+  .confirm-box { width: min(100%, 420px); padding: 24px; }
+}
+
+/* Entre 1024 e 1199px: barra lateral mais estreita e grades menos densas */
+@media (min-width: 1024px) and (max-width: 1199px) {
+  .page-shell { padding-left: 20px; padding-right: 20px; }
+  .app-view { grid-template-columns: 220px minmax(0, 1fr); column-gap: 24px; }
+  .report-filters-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .dashboard-donut-wrap { max-width: 480px; }
+}
+
+/* A partir de 1200px: tabela de lançamentos, painel em duas colunas e relatório em colunas */
+@media (min-width: 1200px) {
+  .expense-main {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+    align-items: center;
+    column-gap: 20px;
+  }
+
+  .expense-main:has(.expense-note) .expense-title-group { grid-row: 1 / span 2; }
+  .expense-meta,
+  .expense-note { grid-column: 2; }
+
+  /* Painel: números à esquerda, gráfico à direita */
+  .dashboard-overview {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+    column-gap: 28px;
+    align-items: start;
+  }
+
+  .dashboard-overview > * { grid-column: 1; }
+
+  .dashboard-overview > .dashboard-donut-wrap {
+    grid-column: 2;
+    grid-row: 1 / span 3;
+    align-self: center;
+    max-width: none;
+    gap: 24px;
+    padding: 4px 4px 4px 28px;
+    border-left: 1px solid var(--line);
+  }
+
+  .dashboard-overview .dashboard-summary { margin-bottom: 0; }
+  .dashboard-donut-box { width: 156px; height: 156px; }
+  .dashboard-legend { gap: 8px; }
+  .dashboard-legend-row { font-size: .82rem; }
+
+  .report-groups {
+    display: block;
+    columns: 2;
+    column-gap: 16px;
+  }
+
+  .report-group {
+    break-inside: avoid;
+    margin-bottom: 14px;
+  }
+
+  .report-group:last-child { margin-bottom: 0; }
+}
+
+@media (min-width: 1024px) and (max-height: 620px) {
+  .app-sidebar { position: static; height: auto; min-height: 0; }
+}
